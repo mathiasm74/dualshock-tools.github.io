@@ -20,9 +20,9 @@ class ControllerFactory {
 
   /**
   * Create a controller instance based on the HID device product ID
-  * @param {HIDDevice} device The HID device
+  * @param device The HID device
   * @param {Object} uiDependencies Optional UI dependencies (l function, etc.)
-  * @returns {BaseController} The appropriate controller instance
+  * @returns The appropriate controller instance
   */
   static createControllerInstance(device, uiDependencies = {}) {
     switch (device.productId) {

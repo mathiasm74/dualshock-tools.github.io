@@ -106,13 +106,13 @@ export class Finetune {
 
     // Set up mode toggle event listeners
     $("#finetuneModeCenter").on('change', (e) => {
-      if (e.target.checked) {
+      if (/** @type {HTMLInputElement} */ (e.target).checked) {
         this.setMode('center');
       }
     });
 
     $("#finetuneModeCircularity").on('change', (e) => {
-      if (e.target.checked) {
+      if (/** @type {HTMLInputElement} */ (e.target).checked) {
         this.setMode('circularity');
       }
     });
@@ -278,7 +278,7 @@ export class Finetune {
   async _onFinetuneChange() {
     const out = FINETUNE_INPUT_SUFFIXES.map((suffix) => {
       const el = $("#finetune" + suffix);
-      const v = parseInt(el.val());
+      const v = parseInt(String(el.val()));
       return isNaN(v) ? 0 : v;
     });
     await this._writeFinetuneData(out);
@@ -379,12 +379,12 @@ export class Finetune {
       const { axis } = opts;
       if(!axis) return;
 
-      this._clearFinetuneAxisHighlights({center: true});
+      this._clearFinetuneAxisHighlights({center: true, circularity: false});
 
       const labelSuffix = `${this.active_stick === 'left' ? "L" : "R"}${axis.toLowerCase()}`;
       $(`#finetuneStickCanvas${labelSuffix}-lbl`).addClass("text-primary");
     } else {
-      this._clearFinetuneAxisHighlights({circularity: true});
+      this._clearFinetuneAxisHighlights({center: false, circularity: true});
 
       const sticks = this.controller.button_states.sticks;
       const currentStick = sticks[this.active_stick];
@@ -415,14 +415,14 @@ export class Finetune {
       return;
     }
 
-    const ctx = c.getContext("2d");
+    const ctx = /** @type {HTMLCanvasElement} */ (c).getContext("2d");
 
     const margins = showRawNumbers ? 15 : 5;
-    const radius = c.width / 2 - margins;
-    const sz = c.width/2 - margins;
+    const radius = /** @type {HTMLCanvasElement} */ (c).width / 2 - margins;
+    const sz = /** @type {HTMLCanvasElement} */ (c).width/2 - margins;
     const hb = radius + margins;
     const yb = radius + margins;
-    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.clearRect(0, 0, /** @type {HTMLCanvasElement} */ (c).width, /** @type {HTMLCanvasElement} */ (c).height);
 
     const isLeftStick = name === "finetuneStickCanvasL";
     const highlight = this.active_stick == (isLeftStick ? 'left' : 'right') && this._isDpadAdjustmentActive();
@@ -430,11 +430,13 @@ export class Finetune {
       // Draw stick position with circle
       draw_stick_position(ctx, hb, yb, sz, plx, ply, {
         circularity_data: isLeftStick ? this.ll_data : this.rr_data,
+        enable_zoom_center: false,
         highlight
       });
     } else {
       // Draw stick position with crosshair
       draw_stick_position(ctx, hb, yb, sz, plx, ply, {
+        circularity_data: null,
         enable_zoom_center: true,
         highlight
       });
@@ -448,7 +450,7 @@ export class Finetune {
     const showRawNumbers = $("#showRawNumbersCheckbox").is(":checked");
     const modal = $("#finetuneModal");
     modal.toggleClass("hide-raw-numbers", !showRawNumbers);
-    localStorage.setItem('showRawNumbersCheckbox', showRawNumbers);
+    localStorage.setItem('showRawNumbersCheckbox', String(showRawNumbers));
 
     this.refresh_finetune_sticks();
   }

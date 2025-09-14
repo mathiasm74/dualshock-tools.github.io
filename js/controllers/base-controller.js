@@ -7,7 +7,7 @@ class BaseController {
   constructor(device, uiDependencies = {}) {
     this.device = device;
     this.model = "undefined"; // to be set by subclasses
-    this.finetuneMaxValue; // to be set by subclasses
+    this.finetuneMaxValue = undefined; // to be set by subclasses
 
     // UI dependencies injected from core
     this.l = uiDependencies.l;
@@ -19,7 +19,7 @@ class BaseController {
 
   /**
   * Get the underlying HID device
-  * @returns {HIDDevice} The HID device
+  * @returns The HID device
   */
   getDevice() {
     return this.device;
@@ -71,7 +71,11 @@ class BaseController {
   async sendFeatureReport(reportId, data) {
     // If data is an array, use allocReq to create proper buffer
     if (Array.isArray(data)) {
-      data = this.alloc_req(reportId, data);
+      const uint8Array = this.alloc_req(reportId, data);
+      // Create a proper ArrayBuffer from the Uint8Array
+      const arrayBuffer = new ArrayBuffer(uint8Array.length);
+      new Uint8Array(arrayBuffer).set(uint8Array);
+      data = arrayBuffer;
     }
 
     try {
@@ -138,6 +142,10 @@ class BaseController {
 
   async calibrateRangeEnd() {
     throw new Error('calibrateRangeEnd() must be implemented by subclass');
+  }
+
+  async calibrateRangeOnClose() {
+    throw new Error('calibrateRangeOnClose() must be implemented by subclass');
   }
 
   parseBatteryStatus(data) {

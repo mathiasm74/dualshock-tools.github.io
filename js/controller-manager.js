@@ -45,7 +45,6 @@ class ControllerManager {
 
   /**
   * Set the current controller instance
-  * @param {BaseController} controller Controller instance
   */
   setControllerInstance(instance) {
     this.currentController = instance;
@@ -53,7 +52,7 @@ class ControllerManager {
 
   /**
   * Get the current device (for backward compatibility)
-  * @returns {HIDDevice|null} Current device or null if none set
+  * @returns Current device or null if none set
   */
   getDevice() {
     return this.currentController?.getDevice() || null;

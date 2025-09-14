@@ -18,14 +18,13 @@ const app = {
 
   // Language and UI state
   lang_orig_text: {},
-  lang_orig_text: {},
   lang_cur: {},
   lang_disabled: true,
   lang_cur_direction: "ltr",
 
   // Session tracking
-  gj: 0,
-  gu: 0
+  gj: "",
+  gu: ""
 };
 
 const ll_data = new Array(CIRCULARITY_DATA_SIZE);
@@ -243,7 +242,7 @@ async function disconnect() {
     controller = null;
     return;
   }
-  app.gj = 0;
+  app.gj = "";
   app.disable_btn = 0;
   await controller.disconnect();
   controller = null; // Tear everything down
@@ -371,7 +370,7 @@ function collectCircularityData(stickStates, leftData, rightData) {
     const distance = Math.sqrt(x * x + y * y);
     // Convert cartesian coordinates to angular index (0 to MAX_N-1)
     // atan2 gives angle in radians, convert to array index with proper wrapping
-    const angleIndex = (parseInt(Math.round(Math.atan2(y, x) * MAX_N / 2.0 / Math.PI)) + MAX_N) % MAX_N;
+    const angleIndex = (Math.round(Math.atan2(y, x) * MAX_N / 2.0 / Math.PI) + MAX_N) % MAX_N;
     // Store maximum distance reached at this angle (for circularity analysis)
     const oldValue = data[angleIndex] ?? 0;
     data[angleIndex] = Math.max(oldValue, distance);
@@ -392,7 +391,7 @@ function reset_circularity_mode() {
 function refresh_stick_pos() {
   if(!controller) return;
 
-  const c = document.getElementById("stickCanvas");
+  const c = /** @type {HTMLCanvasElement} */ (document.getElementById("stickCanvas"));
   const ctx = c.getContext("2d");
   const sz = 60;
   const hb = 20 + sz;
@@ -408,12 +407,14 @@ function refresh_stick_pos() {
   draw_stick_position(ctx, hb, yb, sz, plx, ply, {
     circularity_data: enable_circ_test ? ll_data : null,
     enable_zoom_center,
+    highlight: false
   });
 
   // Draw right stick
   draw_stick_position(ctx, w-hb, yb, sz, prx, pry, {
     circularity_data: enable_circ_test ? rr_data : null,
     enable_zoom_center,
+    highlight: false
   });
 
   const precision = enable_zoom_center ? 3 : 2;
@@ -559,7 +560,7 @@ function update_touchpad_circles(points) {
     circle.setAttribute('class', 'ds-touch');
     circle.setAttribute('cx', cx);
     circle.setAttribute('cy', cy);
-    circle.setAttribute('r', pointRadius);
+    circle.setAttribute('r', String(pointRadius));
     circle.setAttribute('fill', idx === 0 ? '#2196f3' : '#e91e63');
     circle.setAttribute('fill-opacity', '0.5');
     circle.setAttribute('stroke', '#3399cc');
@@ -598,7 +599,7 @@ function handleControllerInput({ changes, inputConfig, touchPoints, batteryStatu
       break;
 
     case 'tests-tab':
-      handle_test_input(changes);
+      handle_test_input();
       break;
   }
 

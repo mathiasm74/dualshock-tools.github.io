@@ -13,10 +13,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": false,
-    "sourceMap": true
+    "sourceMap": true,
+    "types": ["w3c-web-hid", "jquery", "bootstrap"]
   },
   "include": [
-    "js/**/*.js"
+    "js/**/*.js",
+    "types/**/*.d.ts"
   ],
   "exclude": [
     "node_modules",

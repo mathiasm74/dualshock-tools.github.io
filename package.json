@@ -24,6 +24,9 @@
     "author": "",
     "license": "MIT",
     "devDependencies": {
+        "@types/bootstrap": "^5.2.10",
+        "@types/jquery": "^3.5.33",
+        "@types/w3c-web-hid": "^1.0.6",
         "@typescript-eslint/eslint-plugin": "^6.21.0",
         "@typescript-eslint/parser": "^6.21.0",
         "eslint": "^8.57.0",

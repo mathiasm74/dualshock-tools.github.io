@@ -151,7 +151,7 @@ function lang_translate(target_file, target_lang, target_direction) {
 
         $.each(data, function( key, val ) {
           if(lang_cur[key]) {
-            console.log("Warn: already exists " + key);
+            console.log("Warn: already exists " + String(key));
           } else {
             lang_cur[key] = [val];
           }

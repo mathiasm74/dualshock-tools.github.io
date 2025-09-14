@@ -128,8 +128,8 @@ export function lerp_color(a, b, t) {
 * @param {string} value Cookie value
 * @param {number} days Number of days until expiration
 */
-export function createCookie(name, value, days) {
-  const expires = days ? "; expires=" + new Date(Date.now() + days * 24 * 60 * 60 * 1000).toGMTString() : "";
+export function createCookie(name, value, days = 365) {
+  const expires = days ? "; expires=" + new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString() : "";
   document.cookie = encodeURIComponent(name) + "=" + encodeURIComponent(value) + expires + "; path=/";
 }
 
