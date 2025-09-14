@@ -1,6 +1,6 @@
 // Controller type definitions
 
-interface InfoItem {
+export interface InfoItem {
   key: any;
   value: any;
   cat: string;
@@ -9,7 +9,7 @@ interface InfoItem {
   isExtra?: boolean;
 }
 
-interface NvStatus {
+export interface NvStatus {
   status: string;
   locked: boolean;
   mode?: string;
@@ -19,7 +19,7 @@ interface NvStatus {
   error?: string;
 }
 
-interface ControllerInfo {
+export interface ControllerInfo {
   ok: boolean;
   infoItems?: InfoItem[];
   nv?: NvStatus;
@@ -29,17 +29,18 @@ interface ControllerInfo {
   pending_reboot?: boolean;
 }
 
-interface FlashResult {
+export interface FlashResult {
   success: boolean;
   message: string;
+  isHtml?: boolean = false;
 }
 
-interface NvResult {
+export interface NvResult {
   ok: boolean;
   error?: string;
 }
 
-interface CalibrationResult {
+export interface CalibrationResult {
   ok: boolean;
   code?: number;
   d1?: any;
@@ -57,23 +58,15 @@ declare global {
     finetuneMaxValue: number | undefined;
     l: (text: string) => string;
 
-    constructor(
-      device: HIDDevice,
-      uiDependencies?: { l?: (text: string) => string }
-    );
+    constructor(device: HIDDevice, uiDependencies?: { l?: (text: string) => string });
 
     getModel(): string;
     getDevice(): HIDDevice;
     getInputConfig(): any;
     getFinetuneMaxValue(): number;
-    setInputReportHandler(
-      handler: ((event: HIDInputReportEvent) => void) | null
-    ): void;
+    setInputReportHandler(handler: ((event: HIDInputReportEvent) => void) | null): void;
     alloc_req(id: number, data?: number[]): Uint8Array;
-    sendFeatureReport(
-      reportId: number,
-      data: ArrayBuffer | number[]
-    ): Promise<void>;
+    sendFeatureReport(reportId: number, data: ArrayBuffer | number[]): Promise<void>;
     receiveFeatureReport(reportId: number): Promise<DataView>;
     close(): Promise<void>;
 

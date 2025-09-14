@@ -1,6 +1,7 @@
 'use strict';
 
 import { sleep } from '../utils.js';
+import * as bootstrap from 'bootstrap';
 
 /**
  * Calibrate Stick Range Modal Class
