@@ -35,7 +35,7 @@ class DS5EdgeController extends DS5Controller {
     return result;
   }
 
-  async flash(progressCallback: ((progress: number) => void) | null = null): Promise<FlashResult> {
+  async flash(progressCallback: ((progress: number) => void) | null): Promise<FlashResult> {
     la("ds5_edge_flash");
     try {
       const ret = await this.flashModules(progressCallback);

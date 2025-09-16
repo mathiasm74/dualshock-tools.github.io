@@ -8,7 +8,7 @@ import { ControllerInfo, NvResult, FlashResult, CalibrationResult, NvStatus } fr
 export class BaseController {
   device: any;
   model: string;
-  finetuneMaxValue: number | undefined;
+  finetuneMaxValue: number;
   l: (text: string) => string;
 
   constructor(device: any, uiDependencies: { l?: (text: string) => string } = {}) {
