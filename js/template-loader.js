@@ -77,7 +77,7 @@ export async function loadAllTemplates() {
   const finetuneModalHtml = await loadTemplate('finetune-modal');
   const calibCenterModalHtml = await loadTemplate('calib-center-modal');
   const welcomeModalHtml = await loadTemplate('welcome-modal');
-  const calibrateModalHtml = await loadTemplate('calibrate-modal');
+  const autoCalibCenterModalHtml = await loadTemplate('auto-calib-center-modal');
   const rangeModalHtml = await loadTemplate('range-modal');
   const edgeProgressModalHtml = await loadTemplate('edge-progress-modal');
   const edgeModalHtml = await loadTemplate('edge-modal');
@@ -86,6 +86,6 @@ export async function loadAllTemplates() {
   // Create modals container
   const modalsContainer = document.createElement('div');
   modalsContainer.id = 'modals-container';
-  modalsContainer.innerHTML = faqModalHtml + popupModalHtml + finetuneModalHtml + calibCenterModalHtml + welcomeModalHtml + calibrateModalHtml + rangeModalHtml + edgeProgressModalHtml + edgeModalHtml + donateModalHtml;
+  modalsContainer.innerHTML = faqModalHtml + popupModalHtml + finetuneModalHtml + calibCenterModalHtml + welcomeModalHtml + autoCalibCenterModalHtml + rangeModalHtml + edgeProgressModalHtml + edgeModalHtml + donateModalHtml;
   document.body.appendChild(modalsContainer);
 }

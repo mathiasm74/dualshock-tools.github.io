@@ -103,6 +103,11 @@ function gboot() {
     show_welcome_modal();
 
     $("input[name='displayMode']").on('change', on_stick_mode_change);
+
+    // Setup edge modal "Don't show again" checkbox
+    $('#edgeModalDontShowAgain').on('change', function() {
+      localStorage.setItem('edgeModalDontShowAgain', this.checked.toString());
+    });
   }
 
   // Since modules are deferred, DOM might already be loaded
@@ -558,6 +563,15 @@ function update_ds_button_svg(changes, BUTTON_MAP) {
       const svg = trigger.toUpperCase() + '_infill';
       const infill = document.getElementById(svg);
       set_svg_group_color(infill, color);
+
+      // Update percentage text
+      const percentage = Math.round((val / 255) * 100);
+      const percentageText = document.getElementById(trigger.toUpperCase() + '_percentage');
+      if (percentageText) {
+        percentageText.textContent = `${percentage} %`;
+        percentageText.setAttribute('opacity', percentage > 0 ? '1' : '0');
+        percentageText.setAttribute('fill', percentage < 35 ? pressedColor : 'white');
+      }
     }
   }
 
@@ -839,6 +853,12 @@ function show_donate_modal() {
 }
 
 function show_edge_modal() {
+  // Check if user has chosen not to show the modal again
+  const dontShowAgain = localStorage.getItem('edgeModalDontShowAgain');
+  if (dontShowAgain === 'true') {
+    return;
+  }
+
   la("edge_modal");
   bootstrap.Modal.getOrCreateInstance('#edgeModal').show();
 }

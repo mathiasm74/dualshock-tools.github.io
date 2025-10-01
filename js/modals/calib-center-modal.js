@@ -114,7 +114,7 @@ export class CalibCenterModal {
       return;
 
     this.set_progress(0);
-    new bootstrap.Modal(document.getElementById('calibrateModal'), {}).show();
+    new bootstrap.Modal(document.getElementById('autoCalibCenterModal'), {}).show();
 
     await sleep(1000);
 
