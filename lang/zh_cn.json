@@ -66,7 +66,6 @@
     "Sony DualSense": "PS5手柄（Sony DualSense）",
     "Sony DualSense Edge": "PS5精英手柄/DSE(Sony DualSense Edge)",
     "Connected invalid device": "连接了无效设备",
-    "The device appears to be a clone. All calibration functionality is disabled.": "",
     "Error": "错误",
     "My handle on discord is: the_al": "我的 Discord 用户名是: the_al",
     "Initializing...": "初始化...",
@@ -309,5 +308,8 @@
     "skipped": "跳过",
     "tests completed": "测试已完成",
     "to increase the non-circularity.": "增加非圆度",
+    "The device appears to be a clone. All calibration functionality is disabled.": "",
+    "Use four-step calibration": "",
+    "Use quick calibration": "",
     "": ""
 }
