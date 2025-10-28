@@ -185,6 +185,7 @@
     "DualSense Edge Calibration": "Calibrazione del DualSense Edge",
     "For more info or help, feel free to reach out on Discord.": "Per ulteriori informazioni o supporto, non esitare a contattarci su Discord.",
     "More details and images": "Ulteriori dettagli e immagini",
+    "Please connect a DualShock 4, a DualSense or DualSense Edge controller to your computer and press Connect.": "Collega un controller DualShock 4, DualSense o DualSense Edge al tuo computer e premi Connetti.",
     "Please note: the stick modules on the DS Edge <b>cannot be calibrated via software alone</b>.": "Attenzione: i moduli degli stick del DS Edge <b>non possono essere calibrati solo tramite software</b>.",
     "To store a custom calibration on the stick's internal memory, a <b>hardware modification</b> is required.": "Per salvare una calibrazione personalizzata nella memoria interna dello stick, è necessaria una <b>modifica hardware</b>.",
     "Support for calibrating DualSense Edge stick modules is now available as an <b>experimental feature</b>.": "Il supporto per la calibrazione dei moduli stick del DualSense Edge è ora disponibile come <b>funzionalità sperimentale</b>.",
@@ -307,7 +308,7 @@
     "skipped": "saltato",
     "tests completed": "test completati",
     "to increase the non-circularity.": "per aumentare la non-circolarità.",
-    "Please connect a DualShock 4, a DualSense, DualSense Edge or VR2 controller to your computer and press Connect.": "Connetti un controller DualShock 4, DualSense, DualSense Edge o VR2 al computer e premi Connetti.",
+    "Battery level is low. Tests may fail due to the controller being in power saving mode.": "",
     "The device appears to be a clone. All calibration functionality is disabled.": "",
     "": ""
 }
