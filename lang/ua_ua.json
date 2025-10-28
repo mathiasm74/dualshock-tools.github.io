@@ -66,7 +66,6 @@
     "Sony DualSense": "Sony DualSense",
     "Sony DualSense Edge": "Sony DualSense Edge",
     "Connected invalid device": "Підключено неприпустиме пристрій",
-    "The device appears to be a clone. All calibration functionality is disabled.": "",
     "Error": "Помилка",
     "My handle on discord is: the_al": "Мій нік у Discord: the_al",
     "Initializing...": "Ініціалізація...",
@@ -309,5 +308,7 @@
     "skipped": "пропущено",
     "tests completed": "тестів завершено",
     "to increase the non-circularity.": "щоб збільшити неокруглість.",
+    "Battery level is low. Tests may fail due to the controller being in power saving mode.": "",
+    "The device appears to be a clone. All calibration functionality is disabled.": "",
     "": ""
 }
