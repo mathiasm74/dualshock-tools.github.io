@@ -15,9 +15,11 @@ A web-based calibration tool for PlayStation DualShock 4, DualSense, and DualSen
 
 ### Prerequisites
 
-- Node.js (v16 or higher)
+- Node.js v20 or higher (v26 recommended — see `.nvmrc`). Older versions (14, 16, 18) will fail the build; the toolchain requires Node 20+.
 - npm or yarn
 - Modern browser with WebHID support (Chrome/Edge)
+
+If you use [nvm](https://github.com/nvm-sh/nvm), run `nvm install && nvm use` in the project root to pick up the version from `.nvmrc`.
 
 ### Getting Started
 

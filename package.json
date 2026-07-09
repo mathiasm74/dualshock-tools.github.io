@@ -4,6 +4,9 @@
     "description": "A web-based calibration tool for PlayStation DualShock 4, DualSense, and DualSense Edge controllers",
     "main": "index.html",
     "type": "module",
+    "engines": {
+        "node": ">=20"
+    },
     "scripts": {
         "build": "gulp build",
         "build:prod": "gulp build --production",
