@@ -17,6 +17,7 @@ import {
 } from './modals/quick-test-modal.js';
 import { show_calibration_history_modal } from './modals/calibration-history-modal.js';
 import { FinetuneHistory } from './finetune-history.js';
+import { recordConnection, getAllControllers } from './controller-registry.js';
 
 // Application State - manages app-wide state and UI
 const app = {
@@ -123,6 +124,8 @@ function gboot() {
     $('#edgeModalDontShowAgain').on('change', function() {
       Storage.edgeModalDontShowAgain.set(this.checked);
     });
+
+    $('#controllers-tab').on('shown.bs.tab', renderControllersTab);
 
     $('#debug-tab').hide();
     $('#mainTabs').on('click', (() => {
@@ -326,6 +329,14 @@ async function continue_connection({data, device}) {
     Storage.lastConnectedController.set(lastConnectedInfo);
     updateLastConnectedInfo();
 
+    // Record this controller in the local registry (keyed by serial number)
+    recordConnection({
+      serial: lastConnectedInfo.serialNumber,
+      model: model,
+      deviceName: deviceName,
+    });
+    renderControllersTab();
+
     // Initialize SVG controller based on model
     await init_svg_controller(model);
     if (model === "DS5_Edge") {
@@ -421,6 +432,40 @@ async function disconnect() {
   $("#mainmenu").hide();
   $("#aboutdrift").show();
   updateLastConnectedInfo();
+}
+
+// Render the Controllers tab table from the registry, most recent first
+function renderControllersTab() {
+  const tbody = document.getElementById('controllers-table-body');
+  if (!tbody) return;
+
+  const records = Object.values(getAllControllers())
+    .sort((a, b) => (b.lastSeen || '').localeCompare(a.lastSeen || ''));
+
+  $('#controllers-empty').toggle(records.length === 0);
+  $('#controllers-table').toggleClass('d-none', records.length === 0);
+
+  tbody.innerHTML = '';
+  records.forEach(record => {
+    const row = document.createElement('tr');
+
+    const addCell = (text, className = null) => {
+      const cell = document.createElement('td');
+      cell.textContent = text;
+      if (className) cell.className = className;
+      row.appendChild(cell);
+    };
+
+    const formatDate = (iso) => iso ? new Date(iso).toLocaleString() : '';
+
+    addCell(record.deviceName || record.model || '');
+    addCell(record.serial, 'font-monospace');
+    addCell(formatDate(record.firstSeen));
+    addCell(formatDate(record.lastSeen));
+    addCell(String(record.connectCount || 0), 'text-end');
+
+    tbody.appendChild(row);
+  });
 }
 
 function updateLastConnectedInfo() {

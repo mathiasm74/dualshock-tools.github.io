@@ -137,6 +137,11 @@
           </button>
         </li>
         <li class="nav-item" role="presentation">
+          <button class="nav-link" id="controllers-tab" data-bs-toggle="tab" data-bs-target="#controllers-content" type="button" role="tab" aria-controls="controllers-content" aria-selected="false">
+            <i class="fas fa-list"></i>&nbsp;&nbsp;<span class="ds-i18n">Controllers</span>
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
           <button class="nav-link" id="debug-tab" data-bs-toggle="tab" data-bs-target="#debug-content" type="button" role="tab" aria-controls="debug-content" aria-selected="false">
             <i class="fas fa-bug"></i>&nbsp;&nbsp;<span class="ds-i18n">Debug</span>
           </button>
@@ -363,6 +368,35 @@
                       </tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="controllers-content" role="tabpanel" aria-labelledby="controllers-tab">
+          <div class="container-fluid py-4">
+            <div class="row">
+              <div class="col-lg-12 col-xl-10">
+                <div class="card">
+                  <h5 class="card-header"><i class="fas fa-list"></i>&nbsp;&nbsp;<span class="ds-i18n">Seen Controllers</span></h5>
+                  <div class="card-body">
+                    <p class="text-muted ds-i18n" id="controllers-empty">No controllers have been connected yet.</p>
+                    <div class="table-responsive">
+                      <table class="table table-hover align-middle d-none" id="controllers-table">
+                        <thead>
+                          <tr>
+                            <th><span class="ds-i18n">Controller</span></th>
+                            <th><span class="ds-i18n">Serial Number</span></th>
+                            <th><span class="ds-i18n">First seen</span></th>
+                            <th><span class="ds-i18n">Last seen</span></th>
+                            <th class="text-end"><span class="ds-i18n">Connections</span></th>
+                          </tr>
+                        </thead>
+                        <tbody id="controllers-table-body"></tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
