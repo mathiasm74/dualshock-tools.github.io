@@ -231,7 +231,7 @@ async function continue_connection({data, device}) {
     }
 
     // Helper to apply basic UI visibility based on device type
-    function applyDeviceUI({ showInfo, showFinetune, showInfoTab, showQuickTests, showFourStepCalib, showQuickCalib, showCalibrationHistory }) {
+    function applyDeviceUI({ showInfo, showFinetune, showInfoTab, showQuickTests, showFourStepCalib, showQuickCalib, showCalibrationHistory, showShortcutsTab }) {
       $("#infoshowall").toggle(!!showInfo);
       $("#ds5finetune").toggle(!!showFinetune);
       $("#info-tab").toggle(!!showInfoTab);
@@ -240,6 +240,7 @@ async function continue_connection({data, device}) {
       $("#quick-center-calib").toggle(!!showQuickCalib);
       $("#quick-center-calib-group").toggle(!!showQuickCalib);
       $("#restore-calibration-btn").toggle(!!showCalibrationHistory);
+      $("#shortcuts-tab").toggle(!!showShortcutsTab);
     }
 
     let controllerInstance = null;
@@ -524,6 +525,14 @@ function welcome_accepted() {
 async function init_svg_controller(model) {
   const svgContainer = document.getElementById('controller-svg-placeholder');
 
+  // No SVG art for VR2 controllers; clear the placeholder and bail out
+  // before the asset fetch (fetching an undefined filename would get the
+  // dev server's SPA fallback: index.html nested inside the placeholder)
+  if (model === 'VR2') {
+    svgContainer.innerHTML = '';
+    return;
+  }
+
   // Determine which SVG to load based on controller model
   const svgFileName = (() => {
     switch(model) {
@@ -533,10 +542,6 @@ async function init_svg_controller(model) {
         return 'dualsense-controller.svg';
       case 'DS5_Edge':
         return 'ds-edge-controller.svg';
-      case 'VR2':
-        // Disable SVG controller for VR2
-        svgContainer.innerHTML = '';
-        return;
       default:
         throw new Error(`Unknown controller model: ${model}`);
     }
@@ -959,8 +964,10 @@ function handleControllerInput({ changes, inputConfig, touchPoints, batteryStatu
         finetune_handle_controller_input(changes);
       } else {
         // L1 combos: square/circle step through the display modes, triangle
-        // starts the full calibration sequence, cross saves pending changes
-        if (controller.button_states.l1) {
+        // starts the full calibration sequence, cross saves pending changes.
+        // Not on VR2: a single Sense controller doesn't carry both L1 and
+        // the face buttons, so combos are impossible or misfire there.
+        if (controller.button_states.l1 && controller.getModel() !== 'VR2') {
           if (changes.square === true) {
             stepDisplayMode(-1);
           } else if (changes.circle === true) {

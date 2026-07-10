@@ -82,48 +82,52 @@ class ControllerFactory {
     switch (productId) {
       case 0x05c4: // DS4 v1
       case 0x09cc: // DS4 v2
-        return { 
-          showInfo: false, 
-          showFinetune: false, 
+        return {
+          showInfo: false,
+          showFinetune: false,
           showInfoTab: false,
           showQuickTests: true,
           showFourStepCalib: true,
           showQuickCalib: false,
-          showCalibrationHistory: false
+          showCalibrationHistory: false,
+          showShortcutsTab: true
         };
 
       case 0x0ce6: // DS5
       case 0x0df2: // DS5 Edge
-        return { 
-          showInfo: true, 
-          showFinetune: true, 
+        return {
+          showInfo: true,
+          showFinetune: true,
           showInfoTab: true,
           showQuickTests: true,
           showFourStepCalib: false,
           showQuickCalib: true,
-          showCalibrationHistory: true
+          showCalibrationHistory: true,
+          showShortcutsTab: true
         };
 
       case 0x0e45: // VR2 Left Controller
       case 0x0e46: // VR2 Right Controller
-        return { 
-          showInfo: true, 
-          showFinetune: false, 
+        return {
+          showInfo: true,
+          showFinetune: false,
           showInfoTab: true,
           showQuickTests: false,
           showFourStepCalib: true,
-          showQuickCalib: false
+          showQuickCalib: false,
+          showShortcutsTab: false
         };
 
       default:
-        return { 
-          showInfo: false, 
-          showFinetune: false, 
+        return {
+          showInfo: false,
+          showFinetune: false,
           showInfoTab: false,
           showQuickTests: false,
           showFourStepCalib: false,
           showQuickCalib: false,
-          showCalibrationHistory: false
+          showCalibrationHistory: false,
+          showShortcutsTab: false
         };
     }
   }
