@@ -60,6 +60,10 @@ dl.row dd {
   animation: bounce 0.6s ease-in-out infinite !important;
 }
 
+.accordion-item:has(.accordion-collapse.show) i.fas.test-icon-imu {
+  animation: pulse 1s ease-in-out infinite !important;
+}
+
 .accordion-item:has(.accordion-collapse.show) i.fas.test-icon-haptic {
   animation: shake 0.5s ease-in-out infinite !important;
 }
@@ -82,6 +86,40 @@ dl.row dd {
 
 .accordion-item:has(.accordion-collapse.show) i.fas.test-icon-headphone {
   animation: pulse 1s ease-in-out infinite !important;
+}
+
+/* IMU test check badges: bold glyphs, stable pill width */
+.imu-check {
+  font-weight: 900;
+  font-size: 0.85em;
+  min-width: 1.8em;
+}
+
+/* IMU test center-zero bar meters */
+.imu-bar {
+  position: relative;
+  height: 4px;
+  margin-bottom: 4px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+}
+
+.imu-bar::before {
+  /* center (zero) marker */
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.imu-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
 }
 
 /* Quick Test accordion button height reduction */
