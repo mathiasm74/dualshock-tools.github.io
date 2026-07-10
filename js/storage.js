@@ -12,7 +12,8 @@ export const Storage = {
     FINETUNE_CENTER_STEP_SIZE: 'finetuneCenterStepSize',
     FINETUNE_CIRCULARITY_STEP_SIZE: 'finetuneCircularityStepSize',
     FINETUNE_HISTORY: 'finetuneHistory',
-    PREFERRED_THEME: 'preferredTheme',
+PREFERRED_THEME: 'preferredTheme',
+    CONNECTED_CONTROLLERS: 'connectedControllers',
   },
 
   getChangesStorageKey(serialNumber) {
@@ -79,6 +80,20 @@ export const Storage = {
   getNumber(key, defaultValue = 0) {
     const value = this.getString(key);
     return value !== null ? parseInt(value, 10) : defaultValue;
+  },
+
+  connectedControllers: {
+    set(records) {
+      Storage.setObject(Storage.STORAGE_KEYS.CONNECTED_CONTROLLERS, records);
+    },
+
+    get() {
+      return Storage.getObject(Storage.STORAGE_KEYS.CONNECTED_CONTROLLERS) || {};
+    },
+
+    clear() {
+      Storage.removeItem(Storage.STORAGE_KEYS.CONNECTED_CONTROLLERS);
+    },
   },
 
   lastConnectedController: {
