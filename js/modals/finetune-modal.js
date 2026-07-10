@@ -1,6 +1,6 @@
 'use strict';
 
-import { draw_stick_dial } from '../stick-renderer.js';
+import { draw_stick_dial, calculateCircularityError } from '../stick-renderer.js';
 import { dec2hex32, float_to_str, la } from '../utils.js';
 import { Storage } from '../storage.js';
 import { auto_calibrate_stick_centers } from './calib-center-modal.js';
@@ -8,6 +8,16 @@ import { calibrate_range } from './calib-range-modal.js';
 
 const FINETUNE_INPUT_SUFFIXES = ["LL", "LT", "RL", "RT", "LR", "LB", "RR", "RB", "LX", "LY", "RX", "RY"];
 const LEFT_AND_RIGHT = ['left', 'right'];
+
+// Circularity slider mapping: slider 0-100 spans this many raw finetune
+// units, and each raw unit shifts the simulated sample radii by this much
+const CIRCULARITY_SLIDER_MAX_ADJUSTMENT = 175;
+const CIRCULARITY_SLIDER_RADIUS_PER_UNIT = 0.00085;
+
+// L3/R3 preset: raise each sampled stick's circularity error to this value,
+// animating the slider over this duration so the change is visible
+const CIRCULARITY_PRESET_TARGET_ERROR = 9.0;
+const CIRCULARITY_PRESET_ANIMATION_MS = 800;
 
 // Configuration for stick-specific operations
 const STICK_CONFIG = {
@@ -232,15 +242,21 @@ export class Finetune {
   _initSliderListeners(lOrR) {
     const sliderId = `#${lOrR}CircularitySlider`;
 
+    // Manual slider interaction is ignored while the L3/R3 preset animation
+    // is driving the sliders, so the captured base values cannot be rebased
+    // onto partially-adjusted values mid-sweep
     $(sliderId).on('input', (e) => {
+      if (this._presetAnimationActive) return;
       this._onCircularitySliderChange(lOrR, parseInt(e.target.value));
     });
 
     $(sliderId).on('mousedown touchstart', (e) => {
+      if (this._presetAnimationActive) return;
       this._onCircularitySliderStart(lOrR, parseInt(e.target.value));
     });
 
     $(sliderId).on('change', (e) => {
+      if (this._presetAnimationActive) return;
       this._onCircularitySliderRelease(lOrR);
     });
   }
@@ -327,6 +343,8 @@ export class Finetune {
     console.log("Finetune modal hidden event triggered");
 
     // Don't destroy the instance if quick calibration is in progress
+    this._cancelCircularityPresetAnimation();
+
     if (this.isQuickCalibrating) {
       console.log("Quick calibration in progress, preventing dialog destruction");
       return;
@@ -367,6 +385,16 @@ export class Finetune {
    * Handle D-pad adjustments for finetuning
    */
   handleDpadAdjustment(changes) {
+    // L3/R3 in circularity mode: one-click preset that raises the
+    // non-circularity of every sampled stick to the target error. Stop any
+    // running continuous adjustment first: the early return below would
+    // otherwise swallow button-release flags that normally stop it.
+    if (this._mode === 'circularity' && (changes.l3 === true || changes.r3 === true)) {
+      this.stopContinuousDpadAdjustment();
+      this._applyCircularityPreset();
+      return;
+    }
+
     if(!this.active_stick) return;
 
     if (this._mode === 'center') {
@@ -374,6 +402,111 @@ export class Finetune {
     } else {
       this._handleCircularityModeAdjustment(changes);
     }
+  }
+
+  /**
+   * Apply the preset non-circularity to each stick that has sampled
+   * circularity data, exactly as if the slider had been used: capture base
+   * values, find the slider position whose simulated data reaches the
+   * target error, then run the regular slider change/release flow.
+   */
+  async _applyCircularityPreset() {
+    if (this._presetAnimationActive) return;
+    this._presetAnimationActive = true;
+
+    try {
+      await Promise.all(LEFT_AND_RIGHT.map(async (lOrR) => {
+        const config = STICK_CONFIG[lOrR];
+        const circData = this[config.circDataName];
+
+        // Skip sticks that already have non-circularity applied (yellow undo
+        // button showing); undoing first makes them eligible again
+        if (this._sliderUsed[lOrR]) return;
+
+        // Only sticks with sampled data (same >0.2 validity rule as the error calculation)
+        if (!circData || !circData.some(value => value > 0.2)) return;
+
+        // Capture base values exactly as if the user grabbed the slider at 0
+        const slider = $(`#${lOrR}CircularitySlider`);
+        slider.val(0);
+        this._onCircularitySliderStart(lOrR, 0);
+
+        const targetValue = this._findCircularityPresetSliderValue(lOrR, CIRCULARITY_PRESET_TARGET_ERROR);
+        if (targetValue === null) return; // Already at or above the target
+
+        // Sweep the slider to the target so the user can watch the change;
+        // only commit (release + write) if the animation wasn't cancelled
+        const completed = await this._animateCircularitySlider(lOrR, slider, targetValue);
+        if (completed) {
+          this._onCircularitySliderRelease(lOrR);
+        }
+      }));
+    } finally {
+      this._presetAnimationActive = false;
+    }
+  }
+
+  /**
+   * Cancel a running preset animation, if any. The animation frame restores
+   * the base values and nothing is written to the controller.
+   */
+  _cancelCircularityPresetAnimation() {
+    this._presetAnimationActive = false;
+  }
+
+  /**
+   * Animate a circularity slider from 0 to the target value, feeding each
+   * frame through the regular slider change handler so the dial preview
+   * updates along the way. Resolves true when the target was reached, or
+   * false when the animation was cancelled (base values restored, no write).
+   */
+  _animateCircularitySlider(lOrR, slider, targetValue) {
+    return new Promise((resolve) => {
+      const startTime = performance.now();
+      const step = (now) => {
+        // Cancelled (modal closing or mode switch): restore the base values
+        if (!this._presetAnimationActive) {
+          slider.val(0);
+          this._onCircularitySliderChange(lOrR, 0);
+          resolve(false);
+          return;
+        }
+
+        const progress = Math.min(1, (now - startTime) / CIRCULARITY_PRESET_ANIMATION_MS);
+        const eased = 1 - Math.pow(1 - progress, 2); // ease-out: settles gently
+        const value = Math.round(eased * targetValue);
+        slider.val(value);
+        this._onCircularitySliderChange(lOrR, value);
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else {
+          resolve(true);
+        }
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  /**
+   * Find the smallest slider value (0-100) whose simulated circularity data
+   * reaches the target error, using the same model as the slider itself.
+   * Returns null when the stick already meets the target, or 100 (best
+   * effort) when even the full slider range stays below it.
+   */
+  _findCircularityPresetSliderValue(lOrR, targetError) {
+    const config = STICK_CONFIG[lOrR];
+    const startingData = this._inputStartValuesForSlider[lOrR]?.[config.circDataName];
+    if (!startingData) return null;
+
+    for (let value = 0; value <= 100; value++) {
+      const radiusDelta = (value / 100) * CIRCULARITY_SLIDER_MAX_ADJUSTMENT * CIRCULARITY_SLIDER_RADIUS_PER_UNIT;
+      const predicted = startingData.map(radius => Math.max(0, radius + radiusDelta));
+      this._trimCircularityDataToSquare(predicted);
+      if (calculateCircularityError(predicted) >= targetError) {
+        return value === 0 ? null : value;
+      }
+    }
+    return 100;
   }
 
   /**
@@ -446,6 +579,10 @@ export class Finetune {
    * Cancel finetune changes and restore original data
    */
   async cancel() {
+    // Stop a running preset animation before restoring the original data,
+    // so its completion cannot write preset values after the restore
+    this._cancelCircularityPresetAnimation();
+
     if(this.original_data.length == 12)
       await this._writeFinetuneData(this.original_data)
 
@@ -456,6 +593,7 @@ export class Finetune {
    * Set the finetune mode
    */
   setMode(mode) {
+    this._cancelCircularityPresetAnimation();
     this._mode = mode;
     this._updateUI();
 
@@ -910,7 +1048,12 @@ export class Finetune {
         return;
       }
 
-      if (!this.binarySearch.active && !this.binarySearch.inputSuffix && !this._isDpadAdjustmentActive()) {
+      if (!this.binarySearch.active && !this.binarySearch.inputSuffix && !this._isDpadAdjustmentActive() && !this._presetAnimationActive) {
+        // Homing in on a perfect circle contradicts applied non-circularity:
+        // undo it for this stick first (same as the yellow undo button)
+        if (this._sliderUsed[this.active_stick]) {
+          this._resetCircularitySlider(this.active_stick);
+        }
         const inputSuffix = this._getFinetuneInputSuffixForQuadrant(this.active_stick, quadrant);
         if (inputSuffix) {
           this._startBinarySearch(inputSuffix);
@@ -972,6 +1115,8 @@ export class Finetune {
   }
 
   _startContinuousAdjustmentWithSuffix(inputSuffix, adjustment) {
+    if (this._presetAnimationActive) return; // Preset animation owns the inputs
+
     this.stopContinuousDpadAdjustment();
 
     const element = $(`#finetune${inputSuffix}`);
@@ -1235,9 +1380,7 @@ export class Finetune {
     const startValues = this._inputStartValuesForSlider[lOrR];
 
     // Calculate the total adjustment based on slider value from 0
-    // Value 0-100 maps to adjustment range (we'll use a reasonable range)
-    const maxAdjustment = 175; // Adjust this value as needed
-    const totalAdjustment = (value / 100) * maxAdjustment;
+    const totalAdjustment = (value / 100) * CIRCULARITY_SLIDER_MAX_ADJUSTMENT;
 
     config.suffixes.forEach(suffix => {
       const element = $(`#finetune${suffix}`);
@@ -1253,8 +1396,7 @@ export class Finetune {
     });
 
     // Update circularity data with incremental changes proportional to slider movement
-    const adjustmentConstant = 0.00085; // Small constant for incremental adjustments
-    const totalAdjustmentFromBase = totalAdjustment * adjustmentConstant; // Total adjustment from slider position 0
+    const totalAdjustmentFromBase = totalAdjustment * CIRCULARITY_SLIDER_RADIUS_PER_UNIT; // Total adjustment from slider position 0
 
     const startingData = this._inputStartValuesForSlider[lOrR][config.circDataName];
     const circData = this[config.circDataName];
@@ -1332,6 +1474,8 @@ export class Finetune {
    * @param {string} lOrR - 'left' or 'right'
    */
   _resetCircularitySlider(lOrR) {
+    if (this._presetAnimationActive) return; // Preset animation owns the inputs
+
     console.log(`Resetting circularity slider for ${lOrR} stick`);
 
     // If we have starting values stored, use them to reset properly
