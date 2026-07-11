@@ -163,8 +163,10 @@ class DS4Controller extends BaseController {
       const sw_ver_minor = view.getUint16(0x25+4, true);
       try {
         if(!is_clone) {
-          // If this feature report succeeds, it's an original device
-          await this.receiveFeatureReport(0x81);
+          // If this feature report succeeds, it's an original device. A
+          // genuine controller answers instantly; a clone that ignores it
+          // would otherwise hang, so use a short timeout.
+          await this.receiveFeatureReport(0x81, 1000);
           deviceTypeText = l("original");
         }
       } catch(e) {
@@ -183,9 +185,14 @@ class DS4Controller extends BaseController {
       ];
 
       const board_model = this.hwToBoardModel(hw_ver_minor);
-      const bd_addr = await this.getBdAddr();
 
+      // Clones don't implement these reports, so reading them only stacks up
+      // more timeouts - skip them once the device is known to be a clone.
+      let bd_addr = null;
+      let nv = null;
       if(!is_clone) {
+        bd_addr = await this.getBdAddr();
+
         // Add Board Model (UI will append the info icon)
         infoItems.push({ key: l("Board Model"), value: board_model, cat: "hw", addInfoIcon: 'board', copyable: true });
 
@@ -208,9 +215,10 @@ class DS4Controller extends BaseController {
           });
           la("ds4_possible_clone", { bd_addr });
         }
+
+        nv = await this.queryNvStatus();
       }
 
-      const nv = await this.queryNvStatus();
       const rare = this.isRare(hw_ver_minor);
       const disable_bits = is_clone ? 1 : 0; // 1: clone
 
