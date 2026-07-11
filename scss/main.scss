@@ -238,3 +238,12 @@ dl.row {
 	background-color: var(--bs-warning-bg-subtle);
 	color: var(--bs-warning-text-emphasis);
 }
+
+/* Owner text next to "Connected to": clickable to add/edit the owner */
+.owner-link {
+	cursor: pointer;
+
+	&:hover {
+		color: #0d6efd; /* Bootstrap primary blue */
+	}
+}
