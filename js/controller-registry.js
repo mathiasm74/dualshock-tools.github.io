@@ -28,7 +28,7 @@ import { Storage } from './storage.js';
  * @param {Object} info - { serial, model, deviceName }
  * @returns {Object|null} The stored record, or null when there is no serial
  */
-export function recordConnection({ serial, model, deviceName }) {
+export function recordConnection({ serial, model, deviceName, boardModel, color }) {
   if (!serial) return null;
 
   const records = Storage.connectedControllers.get();
@@ -39,10 +39,13 @@ export function recordConnection({ serial, model, deviceName }) {
     serial,
     model: model || existing?.model || null,
     deviceName: deviceName || existing?.deviceName || null,
+    boardModel: boardModel || existing?.boardModel || null,
+    color: color || existing?.color || null,
     firstSeen: existing?.firstSeen || now,
     lastSeen: now,
     connectCount: (existing?.connectCount || 0) + 1,
     owner: existing?.owner || null,
+    repair: existing?.repair || null,
   };
 
   records[serial] = record;
@@ -71,13 +74,28 @@ export function getController(serial) {
  * @returns {Object|null} The updated record, or null for unknown serials
  */
 export function setOwner(serial, owner) {
+  return _updateRecord(serial, record => { record.owner = owner; });
+}
+
+/**
+ * Store the repair details for a known controller
+ * @param {string} serial - Controller serial number
+ * @param {Object} repair - { channel, tech, faultDescription, priceEstimate,
+ *                            foundFaults, actualPrice, done }
+ * @returns {Object|null} The updated record, or null for unknown serials
+ */
+export function setRepair(serial, repair) {
+  return _updateRecord(serial, record => { record.repair = repair; });
+}
+
+function _updateRecord(serial, mutate) {
   if (!serial) return null;
 
   const records = Storage.connectedControllers.get();
   const record = records[serial];
   if (!record) return null;
 
-  record.owner = owner;
+  mutate(record);
   Storage.connectedControllers.set(records);
   return record;
 }

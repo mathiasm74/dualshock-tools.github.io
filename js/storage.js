@@ -14,6 +14,7 @@ export const Storage = {
     FINETUNE_HISTORY: 'finetuneHistory',
     CONNECTED_CONTROLLERS: 'connectedControllers',
     LAST_OWNER_ENTRY: 'lastOwnerEntry',
+    REPAIR_FIELD_HISTORY: 'repairFieldHistory',
   },
 
   getChangesStorageKey(serialNumber) {
@@ -93,6 +94,20 @@ export const Storage = {
 
     clear() {
       Storage.removeItem(Storage.STORAGE_KEYS.CONNECTED_CONTROLLERS);
+    },
+  },
+
+  repairFieldHistory: {
+    set(history) {
+      Storage.setObject(Storage.STORAGE_KEYS.REPAIR_FIELD_HISTORY, history);
+    },
+
+    get() {
+      return Storage.getObject(Storage.STORAGE_KEYS.REPAIR_FIELD_HISTORY) || { channels: [], techs: [] };
+    },
+
+    clear() {
+      Storage.removeItem(Storage.STORAGE_KEYS.REPAIR_FIELD_HISTORY);
     },
   },
 

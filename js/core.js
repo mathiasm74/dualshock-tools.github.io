@@ -346,12 +346,14 @@ async function continue_connection({data, device}) {
       serial: lastConnectedInfo.serialNumber,
       model: model,
       deviceName: deviceName,
+      boardModel: lastConnectedInfo.boardModel,
+      color: lastConnectedInfo.color,
     });
     renderControllersTab();
     updateOwnerDisplay(registryRecord?.serial);
 
     // Ask for the owner's details when the controller has none stored yet
-    if (registryRecord && !registryRecord.owner?.name) {
+    if (registryRecord && !registryRecord.owner?.name && !registryRecord.owner?.storeOwned) {
       show_owner_modal(registryRecord.serial, () => {
         renderControllersTab();
         updateOwnerDisplay(registryRecord.serial);
@@ -462,7 +464,9 @@ let currentOwnerSerial = null;
 function updateOwnerDisplay(serial) {
   currentOwnerSerial = serial || null;
   const owner = getController(serial)?.owner;
-  const parts = owner ? [owner.name, owner.phone, owner.address].filter(Boolean) : [];
+  const parts = owner?.storeOwned
+    ? [l('Store-owned')]
+    : owner ? [owner.name, owner.phone, owner.address].filter(Boolean) : [];
 
   const el = document.getElementById('d-owner');
   if (!el) return;
@@ -499,18 +503,50 @@ function renderControllersTab() {
       row.appendChild(cell);
     };
 
-    const formatDate = (iso) => iso ? new Date(iso).toLocaleString() : '';
+    // Local time as ISO-style "YYYY-MM-DD HH:MM"
+    const formatDate = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
 
-    addCell(record.deviceName || record.model || '');
-    addCell(record.owner?.name || '');
-    addCell(record.serial, 'font-monospace');
-    addCell(formatDate(record.firstSeen));
-    addCell(formatDate(record.lastSeen));
+    addCell([record.color, record.deviceName || record.model].filter(Boolean).join(' '));
+    addCell(record.owner?.storeOwned ? l('Store-owned') : record.owner?.name || '');
+
+    // Repair status: green check when done, hourglass while in progress,
+    // empty when no repair details are stored
+    const doneCell = document.createElement('td');
+    doneCell.className = 'text-center';
+    if (record.repair) {
+      const icon = document.createElement('i');
+      icon.className = record.repair.done ? 'fas fa-check text-success' : 'fas fa-hourglass-half text-secondary';
+      doneCell.title = record.repair.done ? l('Done') : l('In progress');
+      doneCell.appendChild(icon);
+    }
+    row.appendChild(doneCell);
+
+    addCell(formatDate(record.firstSeen), 'small text-nowrap');
+    addCell(formatDate(record.lastSeen), 'small text-nowrap');
     addCell(String(record.connectCount || 0), 'text-end');
+
+    // Serial number appears as a hover tooltip instead of its own column
+    row.title = record.serial;
 
     // Phone/address as a hover tooltip on the owner cell
     const ownerDetails = [record.owner?.phone, record.owner?.address].filter(Boolean).join('\n');
     if (ownerDetails) row.children[1].title = ownerDetails;
+
+    // Clicking a row opens the details modal for that controller
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', () => {
+      show_owner_modal(record.serial, () => {
+        renderControllersTab();
+        if (record.serial === currentOwnerSerial) {
+          updateOwnerDisplay(record.serial);
+        }
+      });
+    });
 
     tbody.appendChild(row);
   });

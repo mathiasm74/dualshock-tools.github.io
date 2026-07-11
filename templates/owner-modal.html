@@ -1,13 +1,17 @@
-<!-- Controller owner entry -->
+<!-- Controller owner and repair details -->
 <div class="modal fade" id="ownerModal" tabindex="-1" aria-labelledby="ownerModalTitle" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title ds-i18n" id="ownerModalTitle">Controller Owner</h5>
+        <h5 class="modal-title" id="ownerModalTitle"><span class="ds-i18n">Controller Details</span> <span class="text-muted" id="owner-modal-controller"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <p class="ds-i18n" id="owner-modal-desc">This controller has no stored owner. Enter the owner's details:</p>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="owner-store-owned">
+          <label class="form-check-label ds-i18n" for="owner-store-owned">Store-owned</label>
+        </div>
         <div class="alert alert-secondary py-2 d-none" id="owner-last-entry">
           <div class="d-flex align-items-center gap-2">
             <div class="flex-grow-1">
@@ -17,17 +21,55 @@
             <button type="button" class="btn btn-outline-primary btn-sm ds-i18n" id="owner-apply-last-btn">Apply</button>
           </div>
         </div>
-        <div class="mb-3">
-          <label for="owner-name" class="form-label ds-i18n">Name</label>
-          <input type="text" class="form-control" id="owner-name" autocomplete="off">
-        </div>
-        <div class="mb-3">
-          <label for="owner-phone" class="form-label"><span class="ds-i18n">Phone</span> <span class="text-muted ds-i18n">(optional)</span></label>
-          <input type="tel" class="form-control" id="owner-phone" autocomplete="off">
-        </div>
-        <div class="mb-0">
-          <label for="owner-address" class="form-label"><span class="ds-i18n">Address</span> <span class="text-muted ds-i18n">(optional)</span></label>
-          <textarea class="form-control" id="owner-address" rows="2" autocomplete="off"></textarea>
+        <div class="row g-4">
+          <div class="col-md-6">
+            <h6 class="ds-i18n">Owner</h6>
+            <div class="mb-3">
+              <label for="owner-name" class="form-label ds-i18n">Name</label>
+              <input type="text" class="form-control" id="owner-name" autocomplete="off">
+            </div>
+            <div class="mb-3">
+              <label for="owner-phone" class="form-label"><span class="ds-i18n">Phone</span> <span class="text-muted ds-i18n">(optional)</span></label>
+              <input type="tel" class="form-control" id="owner-phone" autocomplete="off">
+            </div>
+            <div class="mb-3">
+              <label for="owner-address" class="form-label"><span class="ds-i18n">Address</span> <span class="text-muted ds-i18n">(optional)</span></label>
+              <textarea class="form-control" id="owner-address" rows="2" autocomplete="off"></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="repair-channel" class="form-label ds-i18n">Channel</label>
+              <input type="text" class="form-control" id="repair-channel" list="repair-channel-options" autocomplete="off">
+              <datalist id="repair-channel-options"></datalist>
+            </div>
+            <div class="mb-0">
+              <label for="repair-tech" class="form-label ds-i18n">Repair tech</label>
+              <input type="text" class="form-control" id="repair-tech" list="repair-tech-options" autocomplete="off">
+              <datalist id="repair-tech-options"></datalist>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <h6 class="ds-i18n">Repair</h6>
+            <div class="mb-3">
+              <label for="repair-fault" class="form-label ds-i18n">Fault description</label>
+              <textarea class="form-control" id="repair-fault" rows="2" autocomplete="off"></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="repair-estimate" class="form-label ds-i18n">Price estimate</label>
+              <input type="text" class="form-control" id="repair-estimate" autocomplete="off">
+            </div>
+            <div class="mb-3">
+              <label for="repair-found" class="form-label ds-i18n">Found faults</label>
+              <textarea class="form-control" id="repair-found" rows="2" autocomplete="off"></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="repair-price" class="form-label ds-i18n">Actual price</label>
+              <input type="text" class="form-control" id="repair-price" autocomplete="off">
+            </div>
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="repair-done">
+              <label class="form-check-label ds-i18n" for="repair-done">Done</label>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
