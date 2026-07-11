@@ -88,6 +88,15 @@ dl.row dd {
   animation: pulse 1s ease-in-out infinite !important;
 }
 
+/* Owner text next to "Connected to": clickable to add/edit the owner */
+.owner-link {
+  cursor: pointer;
+}
+
+.owner-link:hover {
+  color: #0d6efd; /* Bootstrap primary blue */
+}
+
 /* VR2 button panel: pills light up light blue on capacitive touch and
    dark blue while clicked */
 .vr2-btn {

@@ -13,6 +13,7 @@ export const Storage = {
     FINETUNE_CIRCULARITY_STEP_SIZE: 'finetuneCircularityStepSize',
     FINETUNE_HISTORY: 'finetuneHistory',
     CONNECTED_CONTROLLERS: 'connectedControllers',
+    LAST_OWNER_ENTRY: 'lastOwnerEntry',
   },
 
   getChangesStorageKey(serialNumber) {
@@ -92,6 +93,20 @@ export const Storage = {
 
     clear() {
       Storage.removeItem(Storage.STORAGE_KEYS.CONNECTED_CONTROLLERS);
+    },
+  },
+
+  lastOwnerEntry: {
+    set(owner) {
+      Storage.setObject(Storage.STORAGE_KEYS.LAST_OWNER_ENTRY, owner);
+    },
+
+    get() {
+      return Storage.getObject(Storage.STORAGE_KEYS.LAST_OWNER_ENTRY);
+    },
+
+    clear() {
+      Storage.removeItem(Storage.STORAGE_KEYS.LAST_OWNER_ENTRY);
     },
   },
 

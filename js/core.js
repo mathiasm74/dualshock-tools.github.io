@@ -17,7 +17,8 @@ import {
 } from './modals/quick-test-modal.js';
 import { show_calibration_history_modal } from './modals/calibration-history-modal.js';
 import { FinetuneHistory } from './finetune-history.js';
-import { recordConnection, getAllControllers } from './controller-registry.js';
+import { recordConnection, getAllControllers, getController } from './controller-registry.js';
+import { show_owner_modal } from './modals/owner-modal.js';
 
 // Application State - manages app-wide state and UI
 const app = {
@@ -126,6 +127,17 @@ function gboot() {
     });
 
     $('#controllers-tab').on('shown.bs.tab', renderControllersTab);
+
+    // Clicking the owner text next to "Connected to" adds/edits the owner
+    // (delegated: the inner link span is recreated on every update)
+    $('#d-owner').on('click', '.owner-link', () => {
+      if (!currentOwnerSerial) return;
+      const serial = currentOwnerSerial;
+      show_owner_modal(serial, () => {
+        renderControllersTab();
+        updateOwnerDisplay(serial);
+      });
+    });
 
     $('#debug-tab').hide();
     $('#mainTabs').on('click', (() => {
@@ -330,12 +342,21 @@ async function continue_connection({data, device}) {
     updateLastConnectedInfo();
 
     // Record this controller in the local registry (keyed by serial number)
-    recordConnection({
+    const registryRecord = recordConnection({
       serial: lastConnectedInfo.serialNumber,
       model: model,
       deviceName: deviceName,
     });
     renderControllersTab();
+    updateOwnerDisplay(registryRecord?.serial);
+
+    // Ask for the owner's details when the controller has none stored yet
+    if (registryRecord && !registryRecord.owner?.name) {
+      show_owner_modal(registryRecord.serial, () => {
+        renderControllersTab();
+        updateOwnerDisplay(registryRecord.serial);
+      });
+    }
 
     // Initialize SVG controller based on model
     await init_svg_controller(model);
@@ -434,6 +455,28 @@ async function disconnect() {
   updateLastConnectedInfo();
 }
 
+// Show the connected controller's owner next to the "Connected to" line.
+// The text is clickable and opens the owner modal for adding or editing.
+let currentOwnerSerial = null;
+
+function updateOwnerDisplay(serial) {
+  currentOwnerSerial = serial || null;
+  const owner = getController(serial)?.owner;
+  const parts = owner ? [owner.name, owner.phone, owner.address].filter(Boolean) : [];
+
+  const el = document.getElementById('d-owner');
+  if (!el) return;
+  el.textContent = '';
+  if (!serial) return;
+
+  // The em dash stays plain text; only the owner text itself is the link
+  el.append('— ');
+  const link = document.createElement('span');
+  link.className = 'owner-link';
+  link.textContent = parts.length ? parts.join(' · ') : l('Add owner');
+  el.appendChild(link);
+}
+
 // Render the Controllers tab table from the registry, most recent first
 function renderControllersTab() {
   const tbody = document.getElementById('controllers-table-body');
@@ -459,10 +502,15 @@ function renderControllersTab() {
     const formatDate = (iso) => iso ? new Date(iso).toLocaleString() : '';
 
     addCell(record.deviceName || record.model || '');
+    addCell(record.owner?.name || '');
     addCell(record.serial, 'font-monospace');
     addCell(formatDate(record.firstSeen));
     addCell(formatDate(record.lastSeen));
     addCell(String(record.connectCount || 0), 'text-end');
+
+    // Phone/address as a hover tooltip on the owner cell
+    const ownerDetails = [record.owner?.phone, record.owner?.address].filter(Boolean).join('\n');
+    if (ownerDetails) row.children[1].title = ownerDetails;
 
     tbody.appendChild(row);
   });

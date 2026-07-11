@@ -104,8 +104,8 @@
 
     <div id="onlinebar" class="vstack p-2" style="display: none;">
       <div class="row">
-        <div class="col-sm-9 hstack">
-          <p><b class="ds-i18n">Connected to:</b></p>&nbsp;<p id="devname"></p>
+        <div class="col-sm-9">
+          <p><b class="ds-i18n">Connected to:</b> <span id="devname"></span> <span id="d-owner" class="text-muted"></span></p>
         </div>
         <div class="col-sm-3">
           <p id="d-bat" style="text-align: right;"></p>
@@ -387,6 +387,7 @@
                         <thead>
                           <tr>
                             <th><span class="ds-i18n">Controller</span></th>
+                            <th><span class="ds-i18n">Owner</span></th>
                             <th><span class="ds-i18n">Serial Number</span></th>
                             <th><span class="ds-i18n">First seen</span></th>
                             <th><span class="ds-i18n">Last seen</span></th>

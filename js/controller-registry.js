@@ -42,6 +42,7 @@ export function recordConnection({ serial, model, deviceName }) {
     firstSeen: existing?.firstSeen || now,
     lastSeen: now,
     connectCount: (existing?.connectCount || 0) + 1,
+    owner: existing?.owner || null,
   };
 
   records[serial] = record;
@@ -61,4 +62,22 @@ export function getAllControllers() {
  */
 export function getController(serial) {
   return serial ? getAllControllers()[serial] || null : null;
+}
+
+/**
+ * Store the owner details for a known controller
+ * @param {string} serial - Controller serial number
+ * @param {Object} owner - { name, phone, address }
+ * @returns {Object|null} The updated record, or null for unknown serials
+ */
+export function setOwner(serial, owner) {
+  if (!serial) return null;
+
+  const records = Storage.connectedControllers.get();
+  const record = records[serial];
+  if (!record) return null;
+
+  record.owner = owner;
+  Storage.connectedControllers.set(records);
+  return record;
 }
