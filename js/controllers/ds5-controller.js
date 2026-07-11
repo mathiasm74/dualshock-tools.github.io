@@ -12,6 +12,7 @@ import {
   la,
 } from '../utils.js';
 import { l } from '../translations.js';
+import { checkBdaddrAuthenticity } from '../oui-check.js';
 
 // DS5 Button mapping configuration
 const DS5_BUTTON_MAP = [
@@ -342,7 +343,23 @@ class DS5Controller extends BaseController {
 
       const nv = await this.queryNvStatus();
       const bd_addr = await this.getBdAddr();
-      infoItems.push({ key: l("Bluetooth Address"), value: bd_addr, cat: "hw", isExtra: true });
+      const authenticity = checkBdaddrAuthenticity(bd_addr);
+      infoItems.push({
+        key: l("Bluetooth Address"),
+        value: bd_addr,
+        cat: "hw",
+        isExtra: true,
+        severity: authenticity.genuine ? undefined : 'warning',
+      });
+      if (!authenticity.genuine && authenticity.reason) {
+        infoItems.push({
+          key: l("Device Type"),
+          value: `${l("possible clone")} (${authenticity.reason})`,
+          cat: "hw",
+          severity: 'warning',
+        });
+        la("ds5_possible_clone", { bd_addr });
+      }
 
       const pending_reboot = (nv?.status === 'pending_reboot');
 

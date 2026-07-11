@@ -1400,7 +1400,7 @@ function render_info_to_dom(infoItems) {
 
     // Apply severity formatting if requested
     if (severity) {
-      const colors = { danger: 'red', success: 'green' }
+      const colors = { danger: 'red', success: 'green', warning: '#cc7000' }
       const color = colors[severity] || 'black';
       valueHtml = `<font color='${color}'><b>${valueHtml}</b></font>`;
     }

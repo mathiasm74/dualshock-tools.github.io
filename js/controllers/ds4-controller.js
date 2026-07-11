@@ -10,6 +10,7 @@ import {
   la
 } from '../utils.js';
 import { l } from '../translations.js';
+import { checkBdaddrAuthenticity } from '../oui-check.js';
 
 // DS4 Button mapping configuration
 const DS4_BUTTON_MAP = [
@@ -187,7 +188,26 @@ class DS4Controller extends BaseController {
       if(!is_clone) {
         // Add Board Model (UI will append the info icon)
         infoItems.push({ key: l("Board Model"), value: board_model, cat: "hw", addInfoIcon: 'board', copyable: true });
-        infoItems.push({ key: l("Bluetooth Address"), value: bd_addr, cat: "hw" });
+
+        // Secondary check: the behavioral test above passed, but a genuine
+        // controller's Bluetooth OUI belongs to a Sony contract manufacturer.
+        // A mismatch flags a clone that mimics the real feature reports.
+        const authenticity = checkBdaddrAuthenticity(bd_addr);
+        infoItems.push({
+          key: l("Bluetooth Address"),
+          value: bd_addr,
+          cat: "hw",
+          severity: authenticity.genuine ? undefined : 'warning',
+        });
+        if (!authenticity.genuine && authenticity.reason) {
+          infoItems.push({
+            key: l("Device Type"),
+            value: `${l("possible clone")} (${authenticity.reason})`,
+            cat: "hw",
+            severity: 'warning',
+          });
+          la("ds4_possible_clone", { bd_addr });
+        }
       }
 
       const nv = await this.queryNvStatus();
