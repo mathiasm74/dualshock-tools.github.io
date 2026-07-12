@@ -29,6 +29,17 @@ import { Storage } from './storage.js';
 export const REGISTRY_FILE_FORMAT = 'dualshock-tools/controller-registry';
 export const REGISTRY_FILE_VERSION = 1;
 
+// Notified after every registry write (connection recorded, owner/repair
+// saved, file imported). Used by registry-sync to push changes to the
+// shared folder.
+let _changeListener = null;
+export function onRegistryChange(listener) {
+  _changeListener = listener;
+}
+function _notifyChange() {
+  _changeListener?.();
+}
+
 /**
  * Record a controller connection: insert a new record for an unseen serial,
  * or update lastSeen/connectCount (and refresh metadata) for a known one.
@@ -57,6 +68,7 @@ export function recordConnection({ serial, model, deviceName, boardModel, color 
 
   records[serial] = record;
   Storage.connectedControllers.set(records);
+  _notifyChange();
   return record;
 }
 
@@ -108,6 +120,7 @@ function _updateRecord(serial, mutate) {
 
   mutate(record);
   Storage.connectedControllers.set(records);
+  _notifyChange();
   return record;
 }
 
@@ -154,6 +167,7 @@ export function importRegistry(data) {
     }
   }
   Storage.connectedControllers.set(records);
+  _notifyChange();
   return { added, merged };
 }
 
