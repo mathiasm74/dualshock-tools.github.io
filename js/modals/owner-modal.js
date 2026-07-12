@@ -38,9 +38,31 @@ function updateStoreOwnedState() {
   $('#owner-save-btn').prop('disabled', !storeOwned && !$('#owner-name').val().trim());
 }
 
+// LastPass ignores data-lpignore and injects its fill icon as a sibling of
+// each input, styled with inline !important and rendered in a closed shadow
+// root — CSS can't reach it. Remove the injected elements as they appear.
+const LASTPASS_SELECTOR = '[data-lastpass-icon-root], [data-lastpass-root], [data-lastpass-infield], [id^="__lpform_"]';
+
+function suppressLastPassIcons() {
+  const modal = document.getElementById('ownerModal');
+  const removeIcons = (root) => {
+    if (root.matches?.(LASTPASS_SELECTOR)) root.remove();
+    root.querySelectorAll?.(LASTPASS_SELECTOR).forEach((el) => el.remove());
+  };
+  removeIcons(modal);
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === Node.ELEMENT_NODE) removeIcons(node);
+      }
+    }
+  }).observe(modal, { childList: true, subtree: true });
+}
+
 function initListeners() {
   if (listenersInitialized) return;
   listenersInitialized = true;
+  suppressLastPassIcons();
 
   // Name is required (unless store-owned); the save button follows it
   $('#owner-name').on('input', () => {
@@ -116,8 +138,7 @@ function initListeners() {
 /**
  * Show the owner/repair details modal for a controller identified by serial
  * number. Fields are prefilled when the controller already has stored
- * details (editing). Skipping (or dismissing) stores nothing; the modal
- * will be offered again on the next connection.
+ * details (editing). Cancelling (or dismissing) stores nothing.
  * @param {string} serial - Controller serial number
  * @param {Function|null} onSaved - Called after the details have been stored
  */
