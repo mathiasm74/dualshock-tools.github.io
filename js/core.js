@@ -17,7 +17,7 @@ import {
 } from './modals/quick-test-modal.js';
 import { show_calibration_history_modal } from './modals/calibration-history-modal.js';
 import { FinetuneHistory } from './finetune-history.js';
-import { recordConnection, getAllControllers, getController } from './controller-registry.js';
+import { recordConnection, getAllControllers, getController, exportRegistry, importRegistry } from './controller-registry.js';
 import { show_owner_modal } from './modals/owner-modal.js';
 
 // Application State - manages app-wide state and UI
@@ -127,6 +127,9 @@ function gboot() {
     });
 
     $('#controllers-tab').on('shown.bs.tab', renderControllersTab);
+    $('#controllers-export-btn').on('click', exportRegistryToFile);
+    $('#controllers-import-btn').on('click', () => $('#controllers-import-file').trigger('click'));
+    $('#controllers-import-file').on('change', importRegistryFromFile);
 
     // Clicking the owner text next to "Connected to" adds/edits the owner
     // (delegated: the inner link span is recreated on every update)
@@ -508,6 +511,34 @@ function updateOwnerDisplay(serial) {
   link.className = 'owner-link';
   link.textContent = parts.length ? parts.join(' · ') : l('Add owner');
   el.appendChild(link);
+}
+
+// Download the registry as a versioned JSON file (backup, or moving the
+// list to another shop computer)
+function exportRegistryToFile() {
+  const json = JSON.stringify(exportRegistry(), null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `controllers-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Merge a registry file exported on another computer into the local list
+async function importRegistryFromFile(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+
+  try {
+    const { added, merged } = importRegistry(JSON.parse(await file.text()));
+    renderControllersTab();
+    updateOwnerDisplay(currentOwnerSerial);
+    show_popup(l('Import complete.') + ` ${added} ` + l('new') + `, ${merged} ` + l('updated') + '.');
+  } catch (e) {
+    show_popup(l('Import failed:') + ' ' + e.message);
+  }
 }
 
 // Render the Controllers tab table from the registry, most recent first

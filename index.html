@@ -379,7 +379,14 @@
             <div class="row">
               <div class="col-lg-12 col-xl-10">
                 <div class="card">
-                  <h5 class="card-header"><i class="fas fa-list"></i>&nbsp;&nbsp;<span class="ds-i18n">Seen Controllers</span></h5>
+                  <h5 class="card-header d-flex align-items-center">
+                    <span><i class="fas fa-list"></i>&nbsp;&nbsp;<span class="ds-i18n">Seen Controllers</span></span>
+                    <span class="ms-auto">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="controllers-export-btn"><i class="fas fa-file-export"></i> <span class="ds-i18n">Export</span></button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="controllers-import-btn"><i class="fas fa-file-import"></i> <span class="ds-i18n">Import</span></button>
+                    </span>
+                  </h5>
+                  <input type="file" accept=".json,application/json" class="d-none" id="controllers-import-file">
                   <div class="card-body">
                     <p class="text-muted ds-i18n" id="controllers-empty">No controllers have been connected yet.</p>
                     <div class="table-responsive">
