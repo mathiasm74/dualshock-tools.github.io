@@ -389,14 +389,6 @@ async function continue_connection({data, device}) {
     renderControllersTab();
     updateOwnerDisplay(registryRecord?.serial);
 
-    // Ask for the owner's details when the controller has none stored yet
-    if (registryRecord && !registryRecord.owner?.name && !registryRecord.owner?.storeOwned) {
-      show_owner_modal(registryRecord.serial, () => {
-        renderControllersTab();
-        updateOwnerDisplay(registryRecord.serial);
-      });
-    }
-
     // Initialize SVG controller based on model
     await init_svg_controller(model);
     if (model === "DS5_Edge") {

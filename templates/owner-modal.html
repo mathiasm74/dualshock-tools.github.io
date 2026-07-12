@@ -8,33 +8,20 @@
       </div>
       <div class="modal-body">
         <p class="ds-i18n" id="owner-modal-desc">This controller has no stored owner. Enter the owner's details:</p>
-        <div class="form-check mb-3">
-          <input class="form-check-input" type="checkbox" id="owner-store-owned">
-          <label class="form-check-label ds-i18n" for="owner-store-owned">Store-owned</label>
-        </div>
-        <div class="alert alert-secondary py-2 d-none" id="owner-last-entry">
-          <div class="d-flex align-items-center gap-2">
-            <div class="flex-grow-1">
-              <div class="text-muted small ds-i18n">Last entered</div>
-              <div id="owner-last-entry-text"></div>
-            </div>
-            <button type="button" class="btn btn-outline-primary btn-sm ds-i18n" id="owner-apply-last-btn">Apply</button>
-          </div>
-        </div>
         <div class="row g-4">
           <div class="col-md-6">
             <h6 class="ds-i18n">Owner</h6>
             <div class="mb-3">
               <label for="owner-name" class="form-label ds-i18n">Name</label>
-              <input type="text" class="form-control" id="owner-name" autocomplete="off">
+              <input type="text" class="form-control" id="owner-name" autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore>
             </div>
             <div class="mb-3">
               <label for="owner-phone" class="form-label"><span class="ds-i18n">Phone</span> <span class="text-muted ds-i18n">(optional)</span></label>
-              <input type="tel" class="form-control" id="owner-phone" autocomplete="off">
+              <input type="tel" class="form-control" id="owner-phone" autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore>
             </div>
             <div class="mb-3">
               <label for="owner-address" class="form-label"><span class="ds-i18n">Address</span> <span class="text-muted ds-i18n">(optional)</span></label>
-              <textarea class="form-control" id="owner-address" rows="2" autocomplete="off"></textarea>
+              <textarea class="form-control" id="owner-address" rows="2" autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore></textarea>
             </div>
             <div class="mb-3">
               <label for="repair-channel" class="form-label ds-i18n">Channel</label>
@@ -71,9 +58,22 @@
             </div>
           </div>
         </div>
+        <div class="alert alert-secondary py-2 mt-4 mb-0 d-none" id="owner-last-entry">
+          <div class="d-flex align-items-center gap-2">
+            <div class="flex-grow-1">
+              <div class="text-muted small ds-i18n">Last entered</div>
+              <div id="owner-last-entry-text"></div>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm ds-i18n" id="owner-apply-last-btn">Apply</button>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary ds-i18n" data-bs-dismiss="modal">Skip</button>
+        <div class="form-check me-auto">
+          <input class="form-check-input" type="checkbox" id="owner-store-owned">
+          <label class="form-check-label ds-i18n" for="owner-store-owned">Store-owned</label>
+        </div>
+        <button type="button" class="btn btn-secondary ds-i18n" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary ds-i18n" id="owner-save-btn" disabled>Save</button>
       </div>
     </div>
