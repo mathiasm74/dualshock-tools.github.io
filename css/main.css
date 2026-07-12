@@ -194,3 +194,22 @@ dl.row dd {
 /* .ds-i18n {
   color: red;
 } */
+
+/* LastPass ignores data-lpignore in recent versions; hide its injected
+   fill icon instead. This app has no login forms, so site-wide is safe. */
+div[data-lastpass-icon-root],
+div[data-lastpass-root],
+div[data-lastpass-infield] {
+  display: none !important;
+}
+
+/* Older LastPass versions paint the icon as a background-image on the
+   input itself, or inject positioned __lpform_ divs */
+input[data-lpignore],
+textarea[data-lpignore] {
+  background-image: none !important;
+}
+
+div[id^="__lpform_"] {
+  display: none !important;
+}
