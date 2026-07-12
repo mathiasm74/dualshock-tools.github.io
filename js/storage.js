@@ -15,6 +15,7 @@ export const Storage = {
     CONNECTED_CONTROLLERS: 'connectedControllers',
     LAST_OWNER_ENTRY: 'lastOwnerEntry',
     REPAIR_FIELD_HISTORY: 'repairFieldHistory',
+    SYNC_STATION_ID: 'syncStationId',
   },
 
   getChangesStorageKey(serialNumber) {
@@ -94,6 +95,20 @@ export const Storage = {
 
     clear() {
       Storage.removeItem(Storage.STORAGE_KEYS.CONNECTED_CONTROLLERS);
+    },
+  },
+
+  syncStationId: {
+    set(id) {
+      Storage.setString(Storage.STORAGE_KEYS.SYNC_STATION_ID, id);
+    },
+
+    get() {
+      return Storage.getString(Storage.STORAGE_KEYS.SYNC_STATION_ID);
+    },
+
+    clear() {
+      Storage.removeItem(Storage.STORAGE_KEYS.SYNC_STATION_ID);
     },
   },
 

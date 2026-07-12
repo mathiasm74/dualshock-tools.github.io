@@ -18,6 +18,7 @@ import {
 import { show_calibration_history_modal } from './modals/calibration-history-modal.js';
 import { FinetuneHistory } from './finetune-history.js';
 import { recordConnection, getAllControllers, getController, exportRegistry, importRegistry } from './controller-registry.js';
+import { initRegistrySync, isSyncSupported, chooseSharedFolder, reconnectSync, disconnectSync as disconnectRegistrySync, syncNow } from './registry-sync.js';
 import { show_owner_modal } from './modals/owner-modal.js';
 
 // Application State - manages app-wide state and UI
@@ -130,6 +131,32 @@ function gboot() {
     $('#controllers-export-btn').on('click', exportRegistryToFile);
     $('#controllers-import-btn').on('click', () => $('#controllers-import-file').trigger('click'));
     $('#controllers-import-file').on('change', importRegistryFromFile);
+
+    // Shared-folder sync needs the File System Access API (Chromium; a
+    // given since the app already requires WebHID)
+    if (isSyncSupported()) {
+      $('#controllers-sync-group').removeClass('d-none');
+      const popupSyncError = (e) => {
+        if (e.name !== 'AbortError') show_popup(l('Sync failed:') + ' ' + e.message);
+      };
+      $('#sync-now-item').on('click', (e) => {
+        e.preventDefault();
+        syncNow().catch(popupSyncError);
+      });
+      $('#sync-reconnect-item').on('click', (e) => {
+        e.preventDefault();
+        reconnectSync().catch(popupSyncError);
+      });
+      $('#sync-choose-item').on('click', (e) => {
+        e.preventDefault();
+        chooseSharedFolder().catch(popupSyncError);
+      });
+      $('#sync-disconnect-item').on('click', (e) => {
+        e.preventDefault();
+        disconnectRegistrySync().catch(popupSyncError);
+      });
+      initRegistrySync(renderSyncStatus).catch((e) => console.warn('sync init failed:', e));
+    }
 
     // Clicking the owner text next to "Connected to" adds/edits the owner
     // (delegated: the inner link span is recreated on every update)
@@ -511,6 +538,35 @@ function updateOwnerDisplay(serial) {
   link.className = 'owner-link';
   link.textContent = parts.length ? parts.join(' · ') : l('Add owner');
   el.appendChild(link);
+}
+
+// Reflect the shared-folder sync state in the controllers tab header:
+// status text next to the buttons, and which dropdown items make sense
+function renderSyncStatus(status, detail) {
+  const configured = status !== 'off';
+  $('#sync-now-item').toggleClass('d-none', !configured || status === 'reconnect');
+  $('#sync-reconnect-item').toggleClass('d-none', status !== 'reconnect');
+  $('#sync-disconnect-item').toggleClass('d-none', !configured);
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const texts = {
+    off: '',
+    reconnect: l('Sync paused — reconnect'),
+    syncing: l('Syncing…'),
+    ok: detail ? `${l('Synced')} ${pad(detail.getHours())}:${pad(detail.getMinutes())}` : l('Synced'),
+    error: l('Sync error'),
+  };
+  const statusEl = $('#controllers-sync-status');
+  statusEl.text(texts[status] || '');
+  statusEl.toggleClass('d-none', !texts[status]);
+  statusEl.toggleClass('text-danger', status === 'error');
+  statusEl.attr('title', status === 'error' && detail ? detail.message : '');
+
+  // A completed sync may have pulled in other stations' records
+  if (status === 'ok') {
+    renderControllersTab();
+    updateOwnerDisplay(currentOwnerSerial);
+  }
 }
 
 // Download the registry as a versioned JSON file (backup, or moving the
