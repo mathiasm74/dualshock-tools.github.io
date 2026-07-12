@@ -195,6 +195,12 @@ dl.row dd {
   color: red;
 } */
 
+/* Sync status in the controllers card header, e.g. "Synced 5 minutes ago".
+   Matches the date columns in the table (.small there = 0.875rem). */
+#controllers-sync-status {
+  font-size: 0.875rem;
+}
+
 /* LastPass ignores data-lpignore in recent versions; hide its injected
    fill icon instead. This app has no login forms, so site-wide is safe. */
 div[data-lastpass-icon-root],

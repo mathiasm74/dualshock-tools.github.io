@@ -128,14 +128,21 @@ function gboot() {
     });
 
     $('#controllers-tab').on('shown.bs.tab', renderControllersTab);
-    $('#controllers-export-btn').on('click', exportRegistryToFile);
-    $('#controllers-import-btn').on('click', () => $('#controllers-import-file').trigger('click'));
+    $('#sync-export-item').on('click', (e) => {
+      e.preventDefault();
+      exportRegistryToFile();
+    });
+    $('#sync-import-item').on('click', (e) => {
+      e.preventDefault();
+      $('#controllers-import-file').trigger('click');
+    });
     $('#controllers-import-file').on('change', importRegistryFromFile);
 
     // Shared-folder sync needs the File System Access API (Chromium; a
-    // given since the app already requires WebHID)
+    // given since the app already requires WebHID). Without it the Sync
+    // menu only offers the file export/import.
     if (isSyncSupported()) {
-      $('#controllers-sync-group').removeClass('d-none');
+      $('#sync-choose-item, #sync-file-divider').removeClass('d-none');
       const popupSyncError = (e) => {
         if (e.name !== 'AbortError') show_popup(l('Sync failed:') + ' ' + e.message);
       };
@@ -156,6 +163,9 @@ function gboot() {
         disconnectRegistrySync().catch(popupSyncError);
       });
       initRegistrySync(renderSyncStatus).catch((e) => console.warn('sync init failed:', e));
+
+      // Keep "Synced x minutes ago" aging while the page sits open
+      setInterval(updateSyncStatusText, 60000);
     }
 
     // Clicking the owner text next to "Connected to" adds/edits the owner
@@ -540,20 +550,25 @@ function updateOwnerDisplay(serial) {
   el.appendChild(link);
 }
 
-// Reflect the shared-folder sync state in the controllers tab header:
-// status text next to the buttons, and which dropdown items make sense
-function renderSyncStatus(status, detail) {
-  const configured = status !== 'off';
-  $('#sync-now-item').toggleClass('d-none', !configured || status === 'reconnect');
-  $('#sync-reconnect-item').toggleClass('d-none', status !== 'reconnect');
-  $('#sync-disconnect-item').toggleClass('d-none', !configured);
+// "just now", "5 minutes ago", "2 hours ago"
+function timeAgo(date) {
+  const mins = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (mins < 1) return l('just now');
+  if (mins === 1) return `1 ${l('minute ago')}`;
+  if (mins < 60) return `${mins} ${l('minutes ago')}`;
+  const hours = Math.floor(mins / 60);
+  return hours === 1 ? `1 ${l('hour ago')}` : `${hours} ${l('hours ago')}`;
+}
 
-  const pad = (n) => String(n).padStart(2, '0');
+let lastSyncState = { status: 'off', detail: null };
+
+function updateSyncStatusText() {
+  const { status, detail } = lastSyncState;
   const texts = {
     off: '',
     reconnect: l('Sync paused — reconnect'),
     syncing: l('Syncing…'),
-    ok: detail ? `${l('Synced')} ${pad(detail.getHours())}:${pad(detail.getMinutes())}` : l('Synced'),
+    ok: detail ? `${l('Synced')} ${timeAgo(detail)}` : l('Synced'),
     error: l('Sync error'),
   };
   const statusEl = $('#controllers-sync-status');
@@ -561,6 +576,17 @@ function renderSyncStatus(status, detail) {
   statusEl.toggleClass('d-none', !texts[status]);
   statusEl.toggleClass('text-danger', status === 'error');
   statusEl.attr('title', status === 'error' && detail ? detail.message : '');
+}
+
+// Reflect the shared-folder sync state in the controllers tab header:
+// status text next to the buttons, and which dropdown items make sense
+function renderSyncStatus(status, detail) {
+  lastSyncState = { status, detail };
+  const configured = status !== 'off';
+  $('#sync-now-item').toggleClass('d-none', !configured || status === 'reconnect');
+  $('#sync-reconnect-item').toggleClass('d-none', status !== 'reconnect');
+  $('#sync-disconnect-item').toggleClass('d-none', !configured);
+  updateSyncStatusText();
 
   // A completed sync may have pulled in other stations' records
   if (status === 'ok') {

@@ -382,16 +382,17 @@
                   <h5 class="card-header d-flex align-items-center">
                     <span><i class="fas fa-list"></i>&nbsp;&nbsp;<span class="ds-i18n">Seen Controllers</span></span>
                     <span class="ms-auto">
-                      <span class="text-muted small fw-normal me-2 d-none" id="controllers-sync-status"></span>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="controllers-export-btn"><i class="fas fa-file-export"></i> <span class="ds-i18n">Export</span></button>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="controllers-import-btn"><i class="fas fa-file-import"></i> <span class="ds-i18n">Import</span></button>
-                      <span class="btn-group d-none" id="controllers-sync-group">
+                      <span class="text-muted fw-normal me-2 d-none" id="controllers-sync-status"></span>
+                      <span class="btn-group" id="controllers-sync-group">
                         <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="controllers-sync-btn" data-bs-toggle="dropdown" aria-expanded="false"><i class="fas fa-arrows-rotate"></i> <span class="ds-i18n">Sync</span></button>
                         <ul class="dropdown-menu dropdown-menu-end">
                           <li><a class="dropdown-item d-none" href="#" id="sync-now-item"><span class="ds-i18n">Sync now</span></a></li>
                           <li><a class="dropdown-item d-none" href="#" id="sync-reconnect-item"><span class="ds-i18n">Reconnect sync folder</span></a></li>
-                          <li><a class="dropdown-item" href="#" id="sync-choose-item"><span class="ds-i18n">Choose shared folder…</span></a></li>
+                          <li><a class="dropdown-item d-none" href="#" id="sync-choose-item"><span class="ds-i18n">Choose shared folder…</span></a></li>
                           <li><a class="dropdown-item d-none" href="#" id="sync-disconnect-item"><span class="ds-i18n">Disconnect</span></a></li>
+                          <li><hr class="dropdown-divider d-none" id="sync-file-divider"></li>
+                          <li><a class="dropdown-item" href="#" id="sync-export-item"><span class="ds-i18n">Export to file…</span></a></li>
+                          <li><a class="dropdown-item" href="#" id="sync-import-item"><span class="ds-i18n">Import from file…</span></a></li>
                         </ul>
                       </span>
                     </span>
