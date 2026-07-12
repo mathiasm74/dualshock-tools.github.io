@@ -266,3 +266,9 @@ textarea[data-lpignore] {
 div[id^="__lpform_"] {
 	display: none !important;
 }
+
+/* Sync status in the controllers card header, e.g. "Synced 5 minutes ago".
+   Matches the date columns in the table (.small there = 0.875rem). */
+#controllers-sync-status {
+	font-size: 0.875rem;
+}
