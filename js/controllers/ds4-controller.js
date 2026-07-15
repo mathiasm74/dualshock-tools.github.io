@@ -737,7 +737,7 @@ class DS4Controller extends BaseController {
    * @returns {Array<string>} Array of supported test types
    */
   getSupportedQuickTests() {
-    return ['usb', 'buttons', 'haptic', 'lights', 'headphone'];
+    return ['usb', 'buttons', 'trackpad', 'haptic', 'lights', 'headphone'];
   }
 }
 
