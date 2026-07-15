@@ -6,9 +6,12 @@ import { l } from './translations.js';
 //
 // Genuine DualShock 4 / DualSense controllers get their Bluetooth radio from
 // one of Sony's two contract manufacturers, so their MAC OUIs belong to
-// Weifang Goertek or Hon Hai / Foxconn. This list is the set of OUIs
-// observed across a 100,000-controller sample (getbdaddr telemetry); the 36
-// OUIs below cover 98.9% of that sample, split ~55% Goertek / ~44% Foxconn.
+// Weifang Goertek or Hon Hai / Foxconn. The core of this list is the set of
+// OUIs observed across a 100,000-controller sample (getbdaddr telemetry),
+// covering 98.9% of that sample, split ~55% Goertek / ~44% Foxconn; a few
+// were added later from genuine controllers flagged in the field, after
+// confirming in the IEEE registry that the OUI belongs to one of the two
+// manufacturers.
 // Everything else in the sample (~1.1%) was an unregistered OUI, an all-zero
 // address, or a locally-administered address - i.e. clones or spoofed radios.
 //
@@ -19,12 +22,12 @@ const GENUINE_CONTROLLER_OUIS = new Set([
   // Weifang Goertek Electronics
   "D0:BC:C1", "4C:B9:9B", "48:18:8D", "88:03:4C", "24:A6:FA", "A0:AB:51",
   "10:18:49", "90:89:5F", "DC:AF:68", "DC:0C:2D", "A4:53:85", "40:1B:5F",
-  "AC:FD:93", "1C:96:5A", "84:17:66", "A4:15:66",
+  "AC:FD:93", "1C:96:5A", "84:17:66", "A4:15:66", "90:B6:85",
   // Hon Hai / Foxconn
   "E8:47:3A", "7C:66:EF", "BC:C7:46", "58:10:31", "AC:36:1B", "84:30:95",
   "A4:AE:11", "1C:A0:B8", "F4:93:9F", "A4:AE:12", "28:C1:3C", "00:1F:E2",
   "70:20:84", "1C:66:6D", "D0:27:88", "00:01:6C", "00:22:68", "90:FB:A6",
-  "30:0E:D5", "0C:EE:E6",
+  "30:0E:D5", "0C:EE:E6", "14:3A:9A",
 ]);
 
 /**
