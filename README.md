@@ -42,9 +42,7 @@ If you use [nvm](https://github.com/nvm-sh/nvm), run `nvm install && nvm use` in
    ```
 
    The app will be available at `http://localhost:8080`. WebHID works here because
-   `localhost` is treated as a secure context. To access the app from another device
-   on your network, use `npm run serve:https` instead (`https://localhost:8443`) — WebHID
-   requires HTTPS for non-localhost origins.
+   `localhost` is treated as a secure context.
 
 ### Development Scripts
 
@@ -52,7 +50,6 @@ If you use [nvm](https://github.com/nvm-sh/nvm), run `nvm install && nvm use` in
 - `npm run build:prod` - Build the application for production
 - `npm run clean` - Clean the dist directory
 - `npm run serve` - Serve the built app over HTTP at `http://localhost:8080` (WebHID works on localhost)
-- `npm run serve:https` - Serve the built app over HTTPS at `https://localhost:8443` (required for WebHID from other devices)
 - `npm run start` - Build and serve the app
 - `npm run dev:full` - Build, watch for changes, and serve with auto-reload
 - `npm run watch` - Watch for file changes and rebuild
@@ -74,8 +71,7 @@ This will:
 
 ### Important Notes
 
-- **WebHID & HTTPS**: WebHID requires a secure context. `localhost` counts as secure, so the default HTTP server (`http://localhost:8080`) works for local development. To reach the app from another device you need HTTPS — use `npm run serve:https`, which serves over `https://localhost:8443` with self-signed certificates.
-- **Browser Security**: You may need to accept the self-signed certificate warning in your browser.
+- **WebHID & secure contexts**: WebHID requires a secure context. `localhost` counts as secure, so the HTTP dev server (`http://localhost:8080`) works for local development. Reaching the app from another device would need HTTPS — use the production site for that.
 - **Controller Support**: Only works in browsers with WebHID support (Chrome, Edge, Opera).
 
 ### Project Structure
