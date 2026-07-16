@@ -193,6 +193,12 @@ export async function syncNow() {
 
     setStatus('ok', new Date());
   } catch (e) {
+    // Chrome throws NotAllowedError/SecurityError when the folder permission
+    // expired mid-session; that needs a user-gesture re-grant, not an error
+    if (e.name === 'NotAllowedError' || e.name === 'SecurityError') {
+      setStatus('reconnect');
+      return;
+    }
     setStatus('error', e);
     throw e;
   } finally {

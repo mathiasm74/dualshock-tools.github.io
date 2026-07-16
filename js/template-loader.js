@@ -85,10 +85,11 @@ export async function loadAllTemplates() {
   const quickTestModalHtml = await loadTemplate('quick-test-modal');
   const calibrationHistoryModalHtml = await loadTemplate('calibration-history-modal');
   const ownerModalHtml = await loadTemplate('owner-modal');
+  const syncReconnectModalHtml = await loadTemplate('sync-reconnect-modal');
 
   // Create modals container
   const modalsContainer = document.createElement('div');
   modalsContainer.id = 'modals-container';
-  modalsContainer.innerHTML = faqModalHtml + popupModalHtml + finetuneModalHtml + calibCenterModalHtml + welcomeModalHtml + autoCalibCenterModalHtml + rangeModalHtml + edgeProgressModalHtml + edgeModalHtml + donateModalHtml + quickTestModalHtml + calibrationHistoryModalHtml + ownerModalHtml;
+  modalsContainer.innerHTML = faqModalHtml + popupModalHtml + finetuneModalHtml + calibCenterModalHtml + welcomeModalHtml + autoCalibCenterModalHtml + rangeModalHtml + edgeProgressModalHtml + edgeModalHtml + donateModalHtml + quickTestModalHtml + calibrationHistoryModalHtml + ownerModalHtml + syncReconnectModalHtml;
   document.body.appendChild(modalsContainer);
 }
