@@ -10,7 +10,8 @@ import {
   la
 } from '../utils.js';
 import { l } from '../translations.js';
-import { checkBdaddrAuthenticity, buildOuiReportUrl } from '../oui-check.js';
+import { checkBdaddrAuthenticity } from '../oui-check.js';
+import { buildOuiReportUrl } from '../field-reports.js';
 
 // DS4 Button mapping configuration
 const DS4_BUTTON_MAP = [
