@@ -154,6 +154,13 @@ function gboot() {
         e.preventDefault();
         reconnectSync().catch(popupSyncError);
       });
+      $('#sync-reconnect-confirm').on('click', () => {
+        reconnectSync()
+          .then((granted) => {
+            if (granted) bootstrap.Modal.getOrCreateInstance('#syncReconnectModal').hide();
+          })
+          .catch(popupSyncError);
+      });
       $('#sync-choose-item').on('click', (e) => {
         e.preventDefault();
         chooseSharedFolder().catch(popupSyncError);
@@ -564,16 +571,21 @@ let lastSyncState = { status: 'off', detail: null };
 
 function updateSyncStatusText() {
   const { status, detail } = lastSyncState;
-  const texts = {
-    off: '',
-    reconnect: l('Sync paused — reconnect'),
-    syncing: l('Syncing…'),
-    ok: detail ? `${l('Synced')} ${timeAgo(detail)}` : l('Synced'),
-    error: l('Sync error'),
-  };
+  // detail is a Date only for 'ok' (an Error for 'error'), so the text for
+  // each status must only be computed when that status is the active one
+  let text = '';
+  if (status === 'reconnect') {
+    text = l('Sync paused — reconnect');
+  } else if (status === 'syncing') {
+    text = l('Syncing…');
+  } else if (status === 'ok') {
+    text = detail ? `${l('Synced')} ${timeAgo(detail)}` : l('Synced');
+  } else if (status === 'error') {
+    text = l('Sync error');
+  }
   const statusEl = $('#controllers-sync-status');
-  statusEl.text(texts[status] || '');
-  statusEl.toggleClass('d-none', !texts[status]);
+  statusEl.text(text);
+  statusEl.toggleClass('d-none', !text);
   statusEl.toggleClass('text-danger', status === 'error');
   statusEl.attr('title', status === 'error' && detail ? detail.message : '');
 }
@@ -581,8 +593,15 @@ function updateSyncStatusText() {
 // Reflect the shared-folder sync state in the controllers tab header:
 // status text next to the buttons, and which dropdown items make sense
 function renderSyncStatus(status, detail) {
+  const wasReconnect = lastSyncState.status === 'reconnect';
   lastSyncState = { status, detail };
   const configured = status !== 'off';
+
+  // Re-granting folder access needs a user gesture, so when sync becomes
+  // paused, offer the click right away instead of hiding it in the menu
+  if (status === 'reconnect' && !wasReconnect) {
+    bootstrap.Modal.getOrCreateInstance('#syncReconnectModal').show();
+  }
   $('#sync-now-item').toggleClass('d-none', !configured || status === 'reconnect');
   $('#sync-reconnect-item').toggleClass('d-none', status !== 'reconnect');
   $('#sync-disconnect-item').toggleClass('d-none', !configured);
