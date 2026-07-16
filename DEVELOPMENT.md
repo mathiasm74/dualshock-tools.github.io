@@ -54,6 +54,16 @@ npm run start
 
 This builds once and serves the result.
 
+### Docker
+
+To build and run without installing Node:
+
+```bash
+docker compose up --build
+```
+
+Then open `http://localhost:8080`. The container builds the production bundle and serves it over HTTP; WebHID still works because the browser sees `localhost`, which is a secure context. (Docker on Windows/macOS is fine here — the controller talks to the browser, not the container.)
+
 ## Important Notes
 
 ### WebHID & Secure Contexts

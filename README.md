@@ -44,6 +44,16 @@ If you use [nvm](https://github.com/nvm-sh/nvm), run `nvm install && nvm use` in
    The app will be available at `http://localhost:8080`. WebHID works here because
    `localhost` is treated as a secure context.
 
+### Docker
+
+Alternatively, build and run without installing Node:
+
+```bash
+docker compose up --build
+```
+
+The app is then available at `http://localhost:8080`.
+
 ### Development Scripts
 
 - `npm run build` - Build the application for development
