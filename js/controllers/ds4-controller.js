@@ -10,7 +10,7 @@ import {
   la
 } from '../utils.js';
 import { l } from '../translations.js';
-import { checkBdaddrAuthenticity } from '../oui-check.js';
+import { checkBdaddrAuthenticity, buildOuiReportUrl } from '../oui-check.js';
 
 // DS4 Button mapping configuration
 const DS4_BUTTON_MAP = [
@@ -209,9 +209,14 @@ class DS4Controller extends BaseController {
         if (!authenticity.genuine && authenticity.reason) {
           infoItems.push({
             key: l("Device Type"),
-            value: `${l("possible clone")} (${authenticity.reason})`,
+            value: `${l("possible unsupported clone")} (${authenticity.reason})`,
             cat: "hw",
             severity: 'warning',
+            // Unknown OUIs can be false positives; let the user report them
+            link: authenticity.reportable ? {
+              href: buildOuiReportUrl(bd_addr, this.getModel()),
+              text: l("Is this controller genuine? Report it"),
+            } : undefined,
           });
           la("ds4_possible_clone", { bd_addr });
         }

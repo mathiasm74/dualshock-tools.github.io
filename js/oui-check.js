@@ -71,5 +71,29 @@ export function checkBdaddrAuthenticity(mac) {
     return { genuine: true, reason: null };
   }
 
-  return { genuine: false, reason: l("the Bluetooth address is not from a known Sony controller manufacturer") };
+  // reportable: a genuine controller could carry an OUI block we haven't
+  // seen yet, so this case (unlike the structural failures above) is worth
+  // reporting for whitelisting
+  return {
+    genuine: false,
+    reason: l("the Bluetooth address is not from a known Sony controller manufacturer"),
+    reportable: true,
+  };
+}
+
+const OUI_REPORT_REPO = 'https://github.com/dualshock-tools/dualshock-tools.github.io';
+
+/**
+ * Build a prefilled GitHub issue URL for reporting a genuine controller
+ * flagged by the OUI check. Only the OUI (first three octets) is included -
+ * the rest of the address identifies the specific device and isn't needed.
+ */
+export function buildOuiReportUrl(mac, model) {
+  const params = new URLSearchParams({
+    template: 'oui-report.yml',
+    title: `OUI whitelist request: ${ouiOf(mac) ?? 'unknown'}`,
+    oui: ouiOf(mac) ?? '',
+    model: model ?? '',
+  });
+  return `${OUI_REPORT_REPO}/issues/new?${params}`;
 }

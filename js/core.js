@@ -1537,7 +1537,7 @@ function render_info_to_dom(infoItems) {
   if (!Array.isArray(infoItems)) return;
 
   // Add new info items
-  infoItems.forEach(({key, value, addInfoIcon, severity, isExtra, cat, copyable}) => {
+  infoItems.forEach(({key, value, addInfoIcon, severity, isExtra, cat, copyable, link}) => {
     if (!key) return;
 
     // Compose value with optional info icon
@@ -1548,6 +1548,11 @@ function render_info_to_dom(infoItems) {
       const colors = { danger: 'red', success: 'green', warning: '#cc7000' }
       const color = colors[severity] || 'black';
       valueHtml = `<font color='${color}'><b>${valueHtml}</b></font>`;
+    }
+
+    // Optional external link below the value (e.g. "report this OUI")
+    if (link) {
+      valueHtml += `<br><a class="small" href="${link.href}" target="_blank" rel="noopener">${link.text}</a>`;
     }
 
     if (isExtra) {

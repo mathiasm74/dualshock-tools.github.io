@@ -1,0 +1,34 @@
+name: Report a genuine controller flagged as a possible clone
+description: The app flagged your controller's Bluetooth address, but you believe the controller is genuine
+title: "OUI whitelist request"
+labels: ["oui-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The clone check compares the first three octets of the controller's
+        Bluetooth address (the OUI) against Sony's known contract
+        manufacturers. Genuine controllers can carry OUI blocks we haven't
+        seen yet — reporting yours helps everyone.
+  - type: input
+    id: oui
+    attributes:
+      label: OUI
+      description: First three octets of the Bluetooth address, as shown in the app (never the full address)
+      placeholder: "AC:FD:93"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Controller model
+      placeholder: "DS5"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Why do you believe it is genuine?
+      description: For example bought from an official retailer, pairs and works with a PlayStation, build quality/serial details
+    validations:
+      required: true
