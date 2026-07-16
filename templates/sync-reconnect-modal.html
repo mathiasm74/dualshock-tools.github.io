@@ -1,0 +1,21 @@
+<!-- Sync Reconnect Modal: shown when the shared-folder permission needs a
+     user-gesture re-grant (e.g. after a browser restart) -->
+<div class="modal fade" id="syncReconnectModal" tabindex="-1" aria-labelledby="syncReconnectModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5 ds-i18n" id="syncReconnectModalLabel">Controller sync paused</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0"><span class="ds-i18n">The browser needs permission to use the shared sync folder again.</span></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary ds-i18n" data-bs-dismiss="modal">Not now</button>
+        <button type="button" class="btn btn-primary" id="sync-reconnect-confirm">
+          <i class="fas fa-arrows-rotate me-1"></i><span class="ds-i18n">Reconnect</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
