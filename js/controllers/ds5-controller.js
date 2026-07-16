@@ -12,7 +12,8 @@ import {
   la,
 } from '../utils.js';
 import { l } from '../translations.js';
-import { checkBdaddrAuthenticity, buildOuiReportUrl } from '../oui-check.js';
+import { checkBdaddrAuthenticity } from '../oui-check.js';
+import { buildOuiReportUrl, buildColorReportUrl } from '../field-reports.js';
 
 // DS5 Button mapping configuration
 const DS5_BUTTON_MAP = [
@@ -199,7 +200,7 @@ function ds5_color(serialNumber) {
   // Color is obtained by the 5th and 6th characters of the serial number
   // e.g. A12305xxx0000000 -> '05' -> Starlight Blue
   const colorMap = {
-    '00': 'White',
+    // '00': 'White',
     '01': 'Midnight Black',
     '02': 'Cosmic Red',
     '03': 'Nova Pink',
@@ -315,7 +316,15 @@ class DS5Controller extends BaseController {
         { key: l("VCM Left Barcode"), value: await this.getSystemInfo(1, 26, 16), cat: "hw", isExtra: true, copyable: true },
         { key: l("VCM Right Barcode"), value: await this.getSystemInfo(1, 28, 16), cat: "hw", isExtra: true, copyable: true },
 
-        { key: l("Color"), value: l(color), cat: "hw", addInfoIcon: 'color', copyable: true },
+        {
+          key: l("Color"), value: l(color), cat: "hw", addInfoIcon: 'color',
+          copyable: color !== 'Unknown',
+          // Unknown color codes are lookup-table gaps; let the user report them
+          link: color === 'Unknown' ? {
+            href: buildColorReportUrl(serial_number.slice(4, 6), this.getModel()),
+            text: l("Know the color? Report it"),
+          } : undefined,
+        },
 
         ...(is_edge ? [] : [{ key: l("Board Model"), value: this.hwToBoardModel(hwinfo), cat: "hw", addInfoIcon: 'board', copyable: true }]),
 

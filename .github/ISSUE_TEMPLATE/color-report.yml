@@ -1,0 +1,35 @@
+name: Report an unknown controller color
+description: The app shows your controller's color as "Unknown"
+title: "Unknown color code"
+labels: ["color-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The app derives the color from a two-character code in the serial
+        number. New colors and special editions appear regularly — reporting
+        the code together with what the controller actually looks like lets
+        us add it for everyone.
+  - type: input
+    id: colorcode
+    attributes:
+      label: Color code
+      description: The two-character code shown by the app (characters 5–6 of the serial number — never post the full serial)
+      placeholder: "13"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Controller model
+      placeholder: "DS5"
+    validations:
+      required: true
+  - type: input
+    id: colorname
+    attributes:
+      label: What color or edition is the controller?
+      description: The official name if you know it (e.g. from the box), otherwise a description
+      placeholder: "Midnight Black / God of War Limited Edition"
+    validations:
+      required: true
