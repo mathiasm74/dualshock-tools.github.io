@@ -200,7 +200,7 @@ function ds5_color(serialNumber) {
   // Color is obtained by the 5th and 6th characters of the serial number
   // e.g. A12305xxx0000000 -> '05' -> Starlight Blue
   const colorMap = {
-    // '00': 'White',
+    '00': 'White',
     '01': 'Midnight Black',
     '02': 'Cosmic Red',
     '03': 'Nova Pink',
