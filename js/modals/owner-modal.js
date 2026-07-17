@@ -38,25 +38,27 @@ function updateStoreOwnedState() {
   $('#owner-save-btn').prop('disabled', !storeOwned && !$('#owner-name').val().trim());
 }
 
-// LastPass ignores data-lpignore and injects its fill icon as a sibling of
-// each input, styled with inline !important and rendered in a closed shadow
-// root — CSS can't reach it. Remove the injected elements as they appear.
+// LastPass ignores data-lpignore and injects its UI styled with inline
+// !important and rendered in closed shadow roots — CSS can't reach it. It
+// appears in two places: fill icons as siblings of each input inside the
+// modal, and a fill popup appended directly to <body> when a field gets
+// focus. Watch the whole body and remove the elements as they appear.
+// This app has no login forms, so site-wide removal is safe.
 const LASTPASS_SELECTOR = '[data-lastpass-icon-root], [data-lastpass-root], [data-lastpass-infield], [id^="__lpform_"]';
 
 function suppressLastPassIcons() {
-  const modal = document.getElementById('ownerModal');
   const removeIcons = (root) => {
     if (root.matches?.(LASTPASS_SELECTOR)) root.remove();
     root.querySelectorAll?.(LASTPASS_SELECTOR).forEach((el) => el.remove());
   };
-  removeIcons(modal);
+  removeIcons(document.body);
   new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType === Node.ELEMENT_NODE) removeIcons(node);
       }
     }
-  }).observe(modal, { childList: true, subtree: true });
+  }).observe(document.body, { childList: true, subtree: true });
 }
 
 function initListeners() {
