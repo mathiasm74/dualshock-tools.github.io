@@ -892,37 +892,50 @@ class DS5Controller extends BaseController {
     let cable_connected = false;
     let is_charging = false;
     let is_error = false;
+    let error_text = null;
 
+    // Status meanings follow the Linux hid-playstation driver
     switch (bat_status) {
-      case 0:
+      case 0x0:
         // On battery power
         charge_level = Math.min(bat_charge * 10 + 5, 100);
         break;
-      case 1:
+      case 0x1:
         // Charging
         charge_level = Math.min(bat_charge * 10 + 5, 100);
         is_charging = true;
         cable_connected = true;
         break;
-      case 2:
+      case 0x2:
         // Fully charged
         charge_level = 100;
         cable_connected = true;
         break;
-      case 15:
-        // Battery is flat
-        charge_level = 0;
-        is_charging = true;
-        cable_connected = true;
+      case 0xa:
+        // Charging suspended: battery voltage or temperature out of range
+        charge_level = Math.min(bat_charge * 10 + 5, 100);
+        is_error = true;
+        error_text = l("voltage or temperature out of range");
         break;
-      case 11: // not sure yet what this error means
+      case 0xb:
+        // Battery temperature error (often a missing/broken thermistor
+        // line: unseated connector or a third-party battery without one)
+        charge_level = Math.min(bat_charge * 10 + 5, 100);
+        is_error = true;
+        error_text = l("temperature error");
+        break;
+      case 0xf:
+        // Charging error
+        is_error = true;
+        error_text = l("charging error");
+        break;
       default:
-        // Error state
+        // Unknown status
         is_error = true;
         break;
     }
 
-    return { charge_level, cable_connected, is_charging, is_error };
+    return { charge_level, cable_connected, is_charging, is_error, error_text };
   }
 }
 

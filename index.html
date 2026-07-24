@@ -456,19 +456,17 @@
             <div class="row mt-3">
               <div class="col-12">
                 <div class="card text-bg-light">
-                  <div class="card-header"><i class="fas fa-flask"></i>&nbsp;&nbsp;DS3 / SIXAXIS experiment</div>
-                  <div class="vstack gap-2 p-2">
-                    <p class="mb-0">Connects a DualShock 3 over USB and sets it operational by reading feature report 0xF2. Then press the PS button to wake the controller and input reports start flowing. Not part of the normal connect flow.</p>
-                    <div class="hstack gap-2">
-                      <button type="button" class="btn btn-primary" onclick="ds3_experiment()">Connect DS3</button>
-                      <button type="button" class="btn btn-outline-secondary" onclick="ds3_experiment_close()">Close</button>
-                    </div>
-                    <div class="font-monospace small" id="ds3-log" style="white-space: pre-wrap;"></div>
-                    <div class="font-monospace small" id="ds3-raw" style="white-space: pre-wrap;"></div>
+                  <div class="card-header"><i class="fas fa-table-cells"></i>&nbsp;&nbsp;<span>Raw input report</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-2 py-0" id="debug-raw-copy">Copy</button>
+                  </div>
+                  <div class="p-2">
+                    <p class="text-muted small mb-2">Live hex view of the connected controller's input report. Bytes that just changed are highlighted.</p>
+                    <div class="font-monospace small" id="debug-raw-hex"></div>
                   </div>
                 </div>
               </div>
             </div>
+
           </div>
         </div>
       </div>

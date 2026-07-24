@@ -187,6 +187,13 @@ function gboot() {
     });
 
     $('#debug-tab').hide();
+
+    // Raw report hex view in the Debug tab, for any connected controller.
+    // (Re)started every time the tab is shown; a no-op while already running.
+    $('#debug-tab').on('shown.bs.tab', () => {
+      start_raw_report_monitor({ hexId: 'debug-raw-hex', copyId: 'debug-raw-copy' });
+    });
+
     $('#mainTabs').on('click', (() => {
       let clickCount = 0;
       return function({target}) {
@@ -886,15 +893,24 @@ function init_vr2_button_panel(svgContainer) {
 // Live raw-report hex view: bytes that changed within the last few hundred ms
 // are highlighted, making it easy to identify which byte/bit a physical
 // control maps to. Known counter bytes are shown muted so they don't drown
-// out the interesting ones. Shared by the VR2 and DS3 button panels.
+// out the interesting ones. Shared by the VR2 panel and the Debug tab.
+// The render loop stops itself on disconnect or when the panel goes away;
+// activeRawMonitors makes re-starting for the same panel a no-op while a
+// loop is still running.
+const activeRawMonitors = new Set();
 function start_raw_report_monitor({ hexId, copyId, counterBytes = [] }) {
+  if (activeRawMonitors.has(hexId)) return;
+  activeRawMonitors.add(hexId);
+
   const MAX_BYTES = 128;
   const HIGHLIGHT_MS = 400;
   const prev = new Array(MAX_BYTES).fill(-1);
   const changedAt = new Array(MAX_BYTES).fill(0);
 
-  // Copy the latest report as hex text for sharing/analysis
-  document.getElementById(copyId)?.addEventListener('click', (event) => {
+  // Copy the latest report as hex text for sharing/analysis (assignment
+  // instead of addEventListener: the handler must not stack on restarts)
+  const copyEl = document.getElementById(copyId);
+  if (copyEl) copyEl.onclick = (event) => {
     event.preventDefault();
     const data = controller?.lastRawInput;
     if (!data) return;
@@ -907,11 +923,14 @@ function start_raw_report_monitor({ hexId, copyId, counterBytes = [] }) {
       lines.push(`${String(row).padStart(2, ' ')}: ${bytes.join(' ')}`);
     }
     navigator.clipboard.writeText(lines.join('\n'));
-  });
+  };
 
   const render = () => {
     const el = document.getElementById(hexId);
-    if (!el || !controller) return; // Panel removed or disconnected; stop the loop
+    if (!el || !controller) {
+      activeRawMonitors.delete(hexId); // Panel removed or disconnected; stop the loop
+      return;
+    }
 
     const data = controller.lastRawInput;
     if (data) {
@@ -1716,99 +1735,6 @@ function infoAlert(message, duration = 5_000) {
 
 
 
-
-// --- DS3 / SIXAXIS WebHID experiment (Debug tab) ---
-// The DS3 enumerates as HID but stays silent until it is set operational.
-// Verified on macOS via WebHID: reading feature report 0xF2 (a standard HID
-// GET_REPORT, which macOS passes through even though it is not in the
-// descriptor) sets the controller operational; the user then presses the PS
-// button to wake it (a USB DS3 sleeps when idle), after which input reports
-// flow. 0xF5 additionally reads the paired master's Bluetooth MAC.
-//
-// Two things that do NOT work / are not needed on macOS:
-//  - SET feature report 0xF4: rejected (macOS validates feature-report
-//    writes against the descriptor).
-//  - 0xF4 as an output report: unnecessary for input, and sending it trips
-//    a macOS screen-recording / Input Monitoring permission prompt.
-let ds3Device = null;
-let ds3ReportCount = 0;
-
-function ds3_log(message) {
-  const el = document.getElementById('ds3-log');
-  if (el) el.textContent += message + '\n';
-  console.log('[DS3]', message);
-}
-
-function ds3_hex(dataView, max = 32) {
-  const bytes = [];
-  for (let i = 0; i < Math.min(max, dataView.byteLength); i++) {
-    bytes.push(dataView.getUint8(i).toString(16).padStart(2, '0'));
-  }
-  return bytes.join(' ') + (dataView.byteLength > max ? ' …' : '');
-}
-
-async function ds3_experiment() {
-  document.getElementById('ds3-log').textContent = '';
-  document.getElementById('ds3-raw').textContent = '';
-  ds3ReportCount = 0;
-
-  try {
-    const devices = await navigator.hid.requestDevice({
-      filters: [{ vendorId: 0x054c, productId: 0x0268 }],
-    });
-    if (!devices.length) {
-      ds3_log('No device selected.');
-      return;
-    }
-
-    ds3Device = devices[0];
-    if (!ds3Device.opened) await ds3Device.open();
-    ds3_log(`Opened: ${ds3Device.productName}`);
-
-    const featureIds = ds3Device.collections
-      .flatMap(c => (c.featureReports || []).map(r => `0x${r.reportId.toString(16)}`));
-    ds3_log(`Collections: ${ds3Device.collections.length}, declared feature reports: ${featureIds.join(', ') || '(none)'}`);
-
-    ds3Device.oninputreport = ({ data, reportId }) => {
-      ds3ReportCount++;
-      if (ds3ReportCount === 1) ds3_log('>>> INPUT REPORTS FLOWING <<<');
-      const el = document.getElementById('ds3-raw');
-      if (el) el.textContent = `reports: ${ds3ReportCount}  id: 0x${reportId.toString(16)}\n${ds3_hex(data)}`;
-    };
-
-    // Set the controller operational by reading feature report 0xF2.
-    // 0xF5 is read only to report the paired master MAC.
-    for (const id of [0xf2, 0xf5]) {
-      try {
-        const data = await ds3Device.receiveFeatureReport(id);
-        ds3_log(`GET 0x${id.toString(16)} ok (${data.byteLength} bytes): ${ds3_hex(data, 20)}`);
-      } catch (e) {
-        ds3_log(`GET 0x${id.toString(16)} failed: ${e.message}`);
-      }
-    }
-
-    ds3_log('Now press the PS button to wake the controller...');
-    setTimeout(() => {
-      if (ds3ReportCount === 0) ds3_log('No input reports after 5s.');
-    }, 5000);
-  } catch (error) {
-    ds3_log(`Error: ${error.message}`);
-  }
-}
-
-async function ds3_experiment_close() {
-  if (!ds3Device) return;
-  try {
-    await ds3Device.close();
-    ds3_log('Closed.');
-  } catch (e) {
-    ds3_log(`Close failed: ${e.message}`);
-  }
-  ds3Device = null;
-}
-
-window.ds3_experiment = ds3_experiment;
-window.ds3_experiment_close = ds3_experiment_close;
 
 // Export functions to global scope for HTML onclick handlers
 window.gboot = gboot;
