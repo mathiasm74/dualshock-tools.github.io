@@ -728,9 +728,9 @@ class ControllerManager {
   /**
   * Convert battery percentage to display text with icons
   */
-  _batteryPercentToText({charge_level, is_charging, is_error}) {
+  _batteryPercentToText({charge_level, is_charging, is_error, error_text}) {
     if (is_error) {
-      return '<font color="red">' + l("error") + '</font>';
+      return '<font color="red">' + (error_text || l("error")) + '</font>';
     }
 
     const batteryIcons = [
