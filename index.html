@@ -110,6 +110,56 @@
       <br>
     </div>
 
+    <!-- Gamepad API input preview, available before the controller is connected with WebHID -->
+    <div id="gamepad-tester" class="px-2" style="display: none;">
+      <p id="gamepad-tester-hint" class="text-muted mb-2">
+        <i class="fas fa-gamepad"></i>&nbsp;&nbsp;<span class="ds-i18n">Press any button on the controller to preview its inputs here without connecting.</span>
+      </p>
+      <div id="gamepad-tester-card" class="card mb-3" style="display: none;">
+        <div class="card-header d-flex align-items-center">
+          <i class="fas fa-vial"></i>&nbsp;&nbsp;<span class="ds-i18n">Input preview</span>
+          <span class="ms-auto text-muted" id="gamepad-tester-name"></span>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-warning py-2" id="gamepad-tester-mapping-warning" style="display: none;">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <span class="ds-i18n">This controller does not report the standard button layout, so the highlighted buttons may not match.</span>
+          </div>
+          <div class="row align-items-center">
+            <div class="col-md-6 col-sm-12 text-center">
+              <div id="gamepad-tester-svg"></div>
+            </div>
+            <div class="col-md-6 col-sm-12">
+              <center>
+                <canvas id="gamepad-tester-stick-canvas" width="300" height="150"></canvas>
+              </center>
+              <div class="hstack justify-content-center">
+                <div class="vstack" style="text-align: center;">
+                  <span>LX:</span>
+                  <pre id="gamepad-tester-lx" style="min-width: 80px;"></pre>
+                </div>
+                <div class="vstack" style="text-align: center;">
+                  <span>LY:</span>
+                  <pre id="gamepad-tester-ly" style="min-width: 80px;"></pre>
+                </div>
+                <div class="vstack" style="text-align: center;">
+                  <span>RX:</span>
+                  <pre id="gamepad-tester-rx" style="min-width: 80px;"></pre>
+                </div>
+                <div class="vstack" style="text-align: center;">
+                  <span>RY:</span>
+                  <pre id="gamepad-tester-ry" style="min-width: 80px;"></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="form-text mb-0">
+            <i class="fas fa-info-circle me-1"></i><span class="ds-i18n">This preview uses the browser's Gamepad API, which needs no pairing but cannot read or change calibration. Press Connect to calibrate the controller.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="onlinebar" class="vstack p-2" style="display: none;">
       <div class="row">
         <div class="col-sm-9 hstack">

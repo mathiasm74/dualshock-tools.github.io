@@ -202,3 +202,13 @@ dl.row {
 	bottom: 0;
 	border-radius: 3px;
 }
+
+/* Gamepad API input preview on the Connect screen */
+#gamepad-tester-svg svg {
+	max-width: 420px;
+}
+
+/* While the preview is shown, let the fixed "about drift" box flow below it instead of covering it */
+body.gamepad-tester-active #aboutdrift {
+	position: static !important;
+}

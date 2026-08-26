@@ -18,6 +18,7 @@ import {
 import { show_calibration_history_modal } from './modals/calibration-history-modal.js';
 import { FinetuneHistory } from './finetune-history.js';
 import * as theme from './theme.js'
+import { startGamepadTester, stopGamepadTester } from './gamepad-tester.js';
 
 // Application State - manages app-wide state and UI
 const app = {
@@ -134,6 +135,10 @@ function gboot() {
     // DOM is already loaded, run immediately
     initializeApp();
   }
+
+  // The Gamepad API needs no pairing, so inputs can be previewed even before
+  // (or without) WebHID access.
+  startGamepadTester();
 
   if (!("hid" in navigator)) {
     $("#offlinebar").hide();
@@ -271,6 +276,7 @@ async function continue_connection({data, device}) {
     const deviceName = ControllerFactory.getDeviceName(device.productId);
     $("#devname").text(deviceName + " (" + dec2hex(device.vendorId) + ":" + dec2hex(device.productId) + ")");
 
+    stopGamepadTester();
     $("#offlinebar").hide();
     $("#onlinebar").show();
     $("#mainmenu").show();
@@ -407,6 +413,7 @@ async function disconnect() {
   $("#mainmenu").hide();
   $("#aboutdrift").show();
   updateLastConnectedInfo();
+  startGamepadTester();
 }
 
 function updateLastConnectedInfo() {
