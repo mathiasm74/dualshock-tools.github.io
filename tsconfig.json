@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    // Only these packages' global declarations are visible (jQuery is loaded from a CDN).
+    "types": ["jquery"],
+
+    // Rollup does the bundling; tsc is only used for type checking.
+    "noEmit": true,
+
+    // Allow incremental migration: .js and .ts files can import each other.
+    // Plain .js files are not type checked until they are converted.
+    "allowJs": true,
+    "checkJs": false,
+
+    "strict": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  },
+  "include": ["js/**/*"]
+}

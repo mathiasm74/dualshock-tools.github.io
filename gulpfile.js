@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import { rollup } from 'rollup';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import rollupTerser from '@rollup/plugin-terser';
+import esbuild from 'rollup-plugin-esbuild';
 import fs from 'fs/promises';
 import path from 'path';
 import { glob } from 'glob';
@@ -31,7 +32,7 @@ const paths = {
   src: {
     js: {
       entry: 'js/core.js',
-      all: 'js/**/*.js'
+      all: 'js/**/*.{js,ts}'
     },
     scss: ['scss/main.scss', 'scss/finetune.scss'],
     html: {
@@ -70,7 +71,9 @@ async function scripts() {
   const inputOptions = {
     input: paths.src.js.entry,
     plugins: [
-      nodeResolve(),
+      nodeResolve({ extensions: ['.mjs', '.js', '.ts', '.json'] }),
+      // Strips TypeScript types only; type checking is done by `tsc`.
+      esbuild({ include: /\.ts$/, target: 'es2022' }),
       ...(isProduction ? [
         rollupTerser({
           compress: {
