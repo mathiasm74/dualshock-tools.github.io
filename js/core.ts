@@ -1,10 +1,24 @@
 'use strict';
 
 import { sleep, float_to_str, dec2hex, dec2hex32, lerp_color, initAnalyticsApi, la } from './utils.js';
-import { Storage } from './storage.js';
-import { initControllerManager } from './controller-manager.js';
+import { Storage, type LastConnectedInfo } from './storage.js';
+import {
+  initControllerManager,
+  type ButtonStates,
+  type ControllerBatteryStatus,
+  type ControllerManager,
+  type InputChanges,
+  type InputResult,
+  type StickPosition,
+  type Sticks,
+  type TouchPoint,
+} from './controller-manager.js';
+import type BaseController from './controllers/base-controller.js';
+import type { ButtonMapping, ControllerInfo, InfoItem, NvStatus } from './controllers/base-controller.js';
+import type { UIConfig } from './controllers/controller-factory.js';
+import type VR2Controller from './controllers/vr2-controller.js';
 import ControllerFactory from './controllers/controller-factory.js';
-import { lang_init, l } from './translations.js';
+import { lang_init, l, type TranslationState } from './translations.js';
 import { loadAllTemplates } from './template-loader.js';
 import { draw_stick_dial, CIRCULARITY_DATA_SIZE, calculateCircularityError } from './stick-renderer.js';
 import { ds5_finetune, isFinetuneVisible, finetune_handle_controller_input } from './modals/finetune-modal.js';
@@ -19,8 +33,23 @@ import { show_calibration_history_modal } from './modals/calibration-history-mod
 import { FinetuneHistory } from './finetune-history.js';
 import * as theme from './theme.js'
 
+type CenterCalibrationMethod = 'quick' | 'four-step';
+type RangeCalibrationMethod = 'normal' | 'expert';
+
+interface AppState extends TranslationState {
+  disable_btn: number;
+  last_disable_btn: number;
+  shownRangeCalibrationWarning: boolean;
+  failedCalibrationDetectionsCount: number;
+  failedCalibrationModalShownCount: number;
+  centerCalibrationMethod: CenterCalibrationMethod;
+  rangeCalibrationMethod: RangeCalibrationMethod;
+  gj: string | number;
+  gu: string | number;
+}
+
 // Application State - manages app-wide state and UI
-const app = {
+const app: AppState = {
   // Button disable state management
   disable_btn: 0,
   last_disable_btn: 0,
@@ -35,7 +64,6 @@ const app = {
 
   // Language and UI state
   lang_orig_text: {},
-  lang_orig_text: {},
   lang_cur: {},
   lang_disabled: true,
   lang_cur_direction: "ltr",
@@ -45,16 +73,16 @@ const app = {
   gu: 0
 };
 
-const ll_data = new Array(CIRCULARITY_DATA_SIZE);
-const rr_data = new Array(CIRCULARITY_DATA_SIZE);
+const ll_data = new Array<number>(CIRCULARITY_DATA_SIZE);
+const rr_data = new Array<number>(CIRCULARITY_DATA_SIZE);
 
 
-let controller = null;
+let controller: ControllerManager | null = null;
 
-function gboot() {
+function gboot(): void {
   app.gu = crypto.randomUUID();
 
-  async function initializeApp() {
+  async function initializeApp(): Promise<void> {
     window.addEventListener("error", (event) => {
       console.error(event.error?.stack || event.message);
       show_popup(event.error?.message || event.message);
@@ -123,7 +151,7 @@ function gboot() {
     $("input[name='displayMode']").on('change', on_stick_mode_change);
 
     $('#edgeModalDontShowAgain').on('change', function() {
-      Storage.edgeModalDontShowAgain.set(this.checked);
+      Storage.edgeModalDontShowAgain.set((this as HTMLInputElement).checked);
     });
   }
 
@@ -148,7 +176,7 @@ function gboot() {
   navigator.hid.addEventListener("disconnect", handleDisconnectedDevice);
 }
 
-async function connect() {
+async function connect(): Promise<void> {
   app.gj = crypto.randomUUID();
   initAnalyticsApi(app); // init with gu and jg
 
@@ -205,7 +233,7 @@ async function connect() {
   }
 }
 
-async function continue_connection({data, device}) {
+async function continue_connection({data, device}: HIDInputReportEvent): Promise<void> {
   // Re-entry guard, outside the try below: input reports keep arriving while
   // the async setup runs (seconds for a clone, whose getInfo probe is slow).
   // A re-entrant call must return without running the finally, which would
@@ -227,7 +255,7 @@ async function continue_connection({data, device}) {
     }
 
     // Helper to apply basic UI visibility based on device type
-    function applyDeviceUI({ showInfo, showFinetune, showInfoTab, showQuickTests, showFourStepCalib, showQuickCalib, showCalibrationHistory }) {
+    function applyDeviceUI({ showInfo, showFinetune, showInfoTab, showQuickTests, showFourStepCalib, showQuickCalib, showCalibrationHistory }: UIConfig): void {
       $("#infoshowall").toggle(!!showInfo);
       $("#ds5finetune").toggle(!!showFinetune);
       $("#info-tab").toggle(!!showInfoTab);
@@ -239,8 +267,8 @@ async function continue_connection({data, device}) {
       $("#restore-calibration-btn").toggle(!!showCalibrationHistory);
     }
 
-    let controllerInstance = null;
-    let info = null;
+    let controllerInstance: BaseController | null = null;
+    let info: ControllerInfo | null = null;
     let isClone = false;
 
     try {
@@ -249,7 +277,7 @@ async function continue_connection({data, device}) {
       controller.setControllerInstance(controllerInstance);
 
       info = await controllerInstance.getInfo();
-      isClone = (info?.disable_bits & 1) !== 0;
+      isClone = ((info?.disable_bits ?? 0) & 1) !== 0;
 
       // Initialize output state (lights/rumble defaults). Skip for clones:
       // they don't handle the output report and the send would hang until
@@ -267,7 +295,7 @@ async function continue_connection({data, device}) {
     if(!info?.ok) {
       // Not connected/failed to fetch info
       if(info) console.error(JSON.stringify(info, null, 2));
-      throw new Error(`${l("Connected invalid device")}: ${l("Error")}  1`, { cause: info?.error });
+      throw new Error(`${l("Connected invalid device")}: ${l("Error")}  1`, { cause: info && !info.ok ? info.error : undefined });
     }
 
     // Get UI configuration and device name
@@ -287,8 +315,8 @@ async function continue_connection({data, device}) {
     $("#resetBtn").show();
     $("#aboutdrift").hide();
 
-    $("#d-nvstatus").text = l("Unknown");
-    $("#d-bdaddr").text = l("Unknown");
+    $("#d-nvstatus").text(l("Unknown"));
+    $("#d-bdaddr").text(l("Unknown"));
 
     $('#controller-tab').tab('show');
 
@@ -308,7 +336,7 @@ async function continue_connection({data, device}) {
     // Serial number is best-effort: clones don't answer the report it reads
     // (skip them to avoid the timeout), and a missing serial must not abort
     // the whole connection.
-    let serialNumber = null;
+    let serialNumber: string | null = null;
     if (!isClone) {
       try {
         serialNumber = await controllerInstance.getSerialNumber();
@@ -318,7 +346,7 @@ async function continue_connection({data, device}) {
     }
 
     // Save controller info to local storage
-    const lastConnectedInfo = {
+    const lastConnectedInfo: LastConnectedInfo = {
       deviceName: deviceName,
       timestamp: new Date().toISOString(),
       serialNumber: serialNumber,
@@ -401,7 +429,7 @@ async function continue_connection({data, device}) {
       if (!controller.has_changes_to_write) {
         const finetuneData = await controllerInstance.getInMemoryModuleData();
         const serialNumber = await controllerInstance.getSerialNumber();
-        FinetuneHistory.save(finetuneData, serialNumber);
+        FinetuneHistory.save(finetuneData!, serialNumber);
       }
     }
   } catch(err) {
@@ -413,7 +441,7 @@ async function continue_connection({data, device}) {
   }
 }
 
-async function disconnect() {
+async function disconnect(): Promise<void> {
   la("disconnect");
   if(!controller?.isConnected()) {
     controller = null;
@@ -435,7 +463,7 @@ async function disconnect() {
   updateLastConnectedInfo();
 }
 
-function updateLastConnectedInfo() {
+function updateLastConnectedInfo(): void {
   const $lastConnected = $("#lastConnected");
   const $infoDiv = $("#lastConnectedInfo");
   const info = Storage.lastConnectedController.get();
@@ -473,19 +501,19 @@ function updateLastConnectedInfo() {
 }
 
 // Wrapper function for HTML onclick handlers
-function disconnectSync() {
+function disconnectSync(): void {
   disconnect().catch(error => {
     throw new Error("Failed to disconnect", { cause: error });
   });
 }
 
-async function handleDisconnectedDevice(e) {
+async function handleDisconnectedDevice(e: HIDConnectionEvent): Promise<void> {
   la("disconnected");
   console.log("Disconnected: " + e.device.productName)
   await disconnect();
 }
 
-function render_nvstatus_to_dom(nv) {
+function render_nvstatus_to_dom(nv: NvStatus | null | undefined): void {
   if(!nv?.status) {
     throw new Error("Invalid NVS status data", { cause: nv?.error });
   }
@@ -512,19 +540,19 @@ function render_nvstatus_to_dom(nv) {
   }
 }
 
-async function refresh_nvstatus() {
-  if (!controller.isConnected()) {
+async function refresh_nvstatus(): Promise<NvStatus | null> {
+  if (!controller!.isConnected()) {
     return null;
   }
 
-  return await controller.queryNvStatus();
+  return await controller!.queryNvStatus();
 }
 
-function set_edge_progress(score) {
+function set_edge_progress(score: number): void {
   $("#dsedge-progress").css({ "width": score + "%" })
 }
 
-function show_welcome_modal() {
+function show_welcome_modal(): void {
   const already_accepted = Storage.getString("welcome_accepted");
   if(already_accepted == "1")
     return;
@@ -532,16 +560,25 @@ function show_welcome_modal() {
   bootstrap.Modal.getOrCreateInstance('#welcomeModal').show();
 }
 
-function welcome_accepted() {
+function welcome_accepted(): void {
   la("welcome_accepted");
   Storage.setString("welcome_accepted", "1");
   $("#welcomeModal").modal("hide");
 }
 
+interface Vr2PanelControl {
+  id: string;
+  label: string;
+  /** button_states key of the click bit */
+  press: string;
+  /** button_states key of the capacitive touch bit */
+  touch?: string;
+}
+
 // One panel pill per physical control: `press` is the click bit and `touch`
 // the capacitive bit merged into the same pill (touch = light blue, click =
 // dark blue)
-const VR2_PANEL_CONTROLS_LEFT = [
+const VR2_PANEL_CONTROLS_LEFT: Vr2PanelControl[] = [
   { id: 'triangle', label: 'Triangle', press: 'triangle', touch: 'touchTriangle' },
   { id: 'square', label: 'Square', press: 'square', touch: 'touchSquare' },
   { id: 'grip', label: 'L1 (grip)', press: 'l1', touch: 'touchGrip' },
@@ -550,7 +587,7 @@ const VR2_PANEL_CONTROLS_LEFT = [
   { id: 'create', label: 'Create', press: 'create' },
 ];
 
-const VR2_PANEL_CONTROLS_RIGHT = [
+const VR2_PANEL_CONTROLS_RIGHT: Vr2PanelControl[] = [
   { id: 'circle', label: 'Circle', press: 'circle', touch: 'touchCircle' },
   { id: 'cross', label: 'Cross', press: 'cross', touch: 'touchCross' },
   { id: 'grip', label: 'R1 (grip)', press: 'r1', touch: 'touchGrip' },
@@ -560,16 +597,16 @@ const VR2_PANEL_CONTROLS_RIGHT = [
   { id: 'ps', label: 'PS', press: 'ps' },
 ];
 
-let vr2PanelControls = null;
+let vr2PanelControls: Vr2PanelControl[] | null = null;
 
 // VR2 controllers have no SVG art; show a live button-press panel instead
-function init_vr2_button_panel(svgContainer) {
-  const isLeft = controller.currentController.isLeft;
+function init_vr2_button_panel(svgContainer: HTMLElement): void {
+  const isLeft = (controller!.currentController as VR2Controller).isLeft;
   vr2PanelControls = isLeft ? VR2_PANEL_CONTROLS_LEFT : VR2_PANEL_CONTROLS_RIGHT;
 
   // The trigger pill sits next to the analog travel bar; all other pills
   // go into the wrapping button row
-  const badge = ({ id, label }) => `<span class="vr2-btn badge rounded-pill" id="vr2-btn-${id}">${label}</span>`;
+  const badge = ({ id, label }: Vr2PanelControl) => `<span class="vr2-btn badge rounded-pill" id="vr2-btn-${id}">${label}</span>`;
   const trigger = vr2PanelControls.find(control => control.id === 'trigger');
   const badges = vr2PanelControls
     .filter(control => control.id !== 'trigger')
@@ -587,7 +624,7 @@ function init_vr2_button_panel(svgContainer) {
         </p>
         <div class="d-flex flex-wrap gap-2 mb-3" id="vr2-buttons">${badges}</div>
         <div class="d-flex align-items-center gap-2">
-          ${badge(trigger)}
+          ${badge(trigger!)}
           <div class="progress flex-grow-1" style="height: 12px;">
             <div class="progress-bar" id="vr2-trigger-bar" style="width: 0%"></div>
           </div>
@@ -608,7 +645,7 @@ function init_vr2_button_panel(svgContainer) {
 // Live raw-report hex view for the VR2 panel: bytes that changed within the
 // last few hundred ms are highlighted, making it easy to identify which
 // byte/bit a physical control maps to
-function start_vr2_raw_monitor() {
+function start_vr2_raw_monitor(): void {
   const MAX_BYTES = 128;
   const HIGHLIGHT_MS = 400;
   // Known counter bytes on the VR2 (always incrementing): shown muted with
@@ -622,9 +659,9 @@ function start_vr2_raw_monitor() {
     event.preventDefault();
     const data = controller?.lastRawInput;
     if (!data) return;
-    const lines = [];
+    const lines: string[] = [];
     for (let row = 0; row < data.byteLength; row += 16) {
-      const bytes = [];
+      const bytes: string[] = [];
       for (let i = row; i < Math.min(row + 16, data.byteLength); i++) {
         bytes.push(data.getUint8(i).toString(16).padStart(2, '0'));
       }
@@ -640,7 +677,7 @@ function start_vr2_raw_monitor() {
     const data = controller.lastRawInput;
     if (data) {
       const now = performance.now();
-      const cells = [];
+      const cells: string[] = [];
       for (let i = 0; i < Math.min(MAX_BYTES, data.byteLength); i++) {
         const v = data.getUint8(i);
         if (v !== prev[i]) {
@@ -660,11 +697,11 @@ function start_vr2_raw_monitor() {
 }
 
 // Reflect VR2 button presses and trigger travel in the button panel
-function update_vr2_button_panel(changes) {
+function update_vr2_button_panel(changes: InputChanges): void {
   if (!vr2PanelControls) return;
 
   // Pills reflect the full current state: click wins over touch
-  const states = controller.button_states;
+  const states = controller!.button_states;
   vr2PanelControls.forEach(({ id, press, touch }) => {
     const pill = document.getElementById(`vr2-btn-${id}`);
     if (!pill) return;
@@ -673,14 +710,14 @@ function update_vr2_button_panel(changes) {
     pill.classList.toggle('touched', !isPressed && !!(touch && states[touch]));
   });
 
-  const analog = changes.l2_analog ?? changes.r2_analog;
+  const analog = (changes.l2_analog ?? changes.r2_analog) as number | undefined;
   if (analog !== undefined) {
     $('#vr2-trigger-bar').css('width', `${Math.round(analog / 255 * 100)}%`);
   }
 }
 
-async function init_svg_controller(model) {
-  const svgContainer = document.getElementById('controller-svg-placeholder');
+async function init_svg_controller(model: string | null): Promise<void> {
+  const svgContainer = document.getElementById('controller-svg-placeholder')!;
   const colorMode = Storage.preferredTheme.get();
 
   // The container insets the controller drawing with side margins; the VR2
@@ -709,7 +746,7 @@ async function init_svg_controller(model) {
     }
   })();
 
-  let svgContent;
+  let svgContent: string;
 
   // Check if we have bundled assets (production mode)
   if (window.BUNDLED_ASSETS && window.BUNDLED_ASSETS.svg && window.BUNDLED_ASSETS.svg[svgFileName]) {
@@ -759,11 +796,11 @@ async function init_svg_controller(model) {
 * around the stick's circular range, creating a polar coordinate map of
 * stick movement capabilities.
 */
-function collectCircularityData(stickStates, leftData, rightData) {
+function collectCircularityData(stickStates: Sticks | undefined, leftData: number[], rightData: number[]): void {
   const { left, right  } = stickStates || {};
   const MAX_N = CIRCULARITY_DATA_SIZE;
 
-  for(const [stick, data] of [[left, leftData], [right, rightData]]) {
+  for(const [stick, data] of [[left, leftData], [right, rightData]] as [StickPosition | undefined, number[]][]) {
     if (!stick) return; // Skip if no stick changed position
 
     const { x, y } = stick;
@@ -771,31 +808,31 @@ function collectCircularityData(stickStates, leftData, rightData) {
     const distance = Math.sqrt(x * x + y * y);
     // Convert cartesian coordinates to angular index (0 to MAX_N-1)
     // atan2 gives angle in radians, convert to array index with proper wrapping
-    const angleIndex = (parseInt(Math.round(Math.atan2(y, x) * MAX_N / 2.0 / Math.PI)) + MAX_N) % MAX_N;
+    const angleIndex = (parseInt(String(Math.round(Math.atan2(y, x) * MAX_N / 2.0 / Math.PI))) + MAX_N) % MAX_N;
     // Store maximum distance reached at this angle (for circularity analysis)
     const oldValue = data[angleIndex] ?? 0;
     data[angleIndex] = Math.max(oldValue, distance);
   }
 }
 
-function clear_circularity(leftOrRight = 'both') {
+function clear_circularity(leftOrRight: 'left' | 'right' | 'both' = 'both'): void {
   if(['left', 'both'].includes(leftOrRight)) ll_data.fill(0);
   if(['right', 'both'].includes(leftOrRight)) rr_data.fill(0);
 }
 
-function reset_circularity_mode() {
+function reset_circularity_mode(): void {
   clear_circularity();
   $("#normalMode").prop('checked', true);
   refresh_stick_pos();
 }
 
-function refresh_stick_pos() {
+function refresh_stick_pos(): void {
   if(!controller) return;
 
   const hasSingleStick = (controller.currentController?.getNumberOfSticks() == 1);
 
-  const c = document.getElementById("stickCanvas");
-  const ctx = c.getContext("2d");
+  const c = document.getElementById("stickCanvas") as HTMLCanvasElement;
+  const ctx = c.getContext("2d")!;
   const sz = 60;
   const yb = 15 + sz;
   const w = c.width;
@@ -829,7 +866,14 @@ function refresh_stick_pos() {
     $("#ry-lbl").text(float_to_str(pry, precision));
   }
 
-  const CONTROLLER_STICK_CONFIG = {
+  interface StickSvgConfig {
+    maxOffset: number;
+    L3: { cx: number, cy: number };
+    R3: { cx: number, cy: number };
+    scale?: number;
+  }
+
+  const CONTROLLER_STICK_CONFIG: Record<string, StickSvgConfig> = {
     DS4: {
       maxOffset: 25,
       L3: { cx: 295.63, cy: 461.03 },
@@ -848,7 +892,7 @@ function refresh_stick_pos() {
     },
   };
 
-  const updateSticksPosition = (config, plx, ply, prx, pry) => {
+  const updateSticksPosition = (config: StickSvgConfig, plx: number, ply: number, prx: number, pry: number) => {
     const { maxOffset, L3, R3, scale } = config;
     const scaleStr = scale ? ` scale(${scale})` : '';
 
@@ -863,7 +907,7 @@ function refresh_stick_pos() {
 
   try {
     const model = controller.getModel();
-    const config = CONTROLLER_STICK_CONFIG[model];
+    const config = CONTROLLER_STICK_CONFIG[model as string];
     if (config) {
       updateSticksPosition(config, plx, ply, prx, pry);
     }
@@ -871,7 +915,7 @@ function refresh_stick_pos() {
     // Fail silently if SVG not present
   }
 
-  const circularityCheckIcon = document.getElementById('circularityCheckIcon');
+  const circularityCheckIcon = document.getElementById('circularityCheckIcon')!;
   if (!enable_circ_test) {
     circularityCheckIcon.style.display = 'none';
     return;
@@ -886,18 +930,18 @@ function refresh_stick_pos() {
 const circ_checked = () => $("#checkCircularityMode").is(':checked');
 const center_zoom_checked = () => $("#centerZoomMode").is(':checked');
 
-function resetStickDiagrams() {
+function resetStickDiagrams(): void {
   clear_circularity();
   refresh_stick_pos();
 }
 
 // Helper functions to switch display modes
-function switchTo10xZoomMode() {
+function switchTo10xZoomMode(): void {
   $("#centerZoomMode").prop('checked', true);
   resetStickDiagrams();
 }
 
-function switchToRangeMode() {
+function switchToRangeMode(): void {
   $("#checkCircularityMode").prop('checked', true);
   resetStickDiagrams();
 }
@@ -905,8 +949,8 @@ function switchToRangeMode() {
 const on_stick_mode_change = () => resetStickDiagrams();
 
 const throttled_refresh_sticks = (() => {
-  let delay = null;
-  return function(changes) {
+  let delay: ReturnType<typeof setTimeout> | null = null;
+  return function(changes: InputChanges) {
     if (!changes.sticks) return;
     if (delay) return;
 
@@ -918,15 +962,15 @@ const throttled_refresh_sticks = (() => {
   };
 })();
 
-const update_stick_graphics = (changes) => throttled_refresh_sticks(changes);
+const update_stick_graphics = (changes: InputChanges) => throttled_refresh_sticks(changes);
 
-function update_battery_status({/* charge_level, cable_connected, is_charging, is_error, */ bat_txt, changed}) {
+function update_battery_status({/* charge_level, cable_connected, is_charging, is_error, */ bat_txt, changed}: ControllerBatteryStatus): void {
   if(changed) {
     $("#d-bat").html(bat_txt);
   }
 }
 
-function update_ds_button_svg(changes, BUTTON_MAP) {
+function update_ds_button_svg(changes: InputChanges, BUTTON_MAP: ButtonMapping[]): void {
   if (!changes || Object.keys(changes).length === 0) return;
 
   const colorMode = Storage.preferredTheme.get();
@@ -937,7 +981,7 @@ function update_ds_button_svg(changes, BUTTON_MAP) {
   for (const trigger of ['l2', 'r2']) {
     const key = trigger + '_analog';
     if (changes.hasOwnProperty(key)) {
-      const val = changes[key];
+      const val = changes[key] as number;
       const t = val / 255;
       const color = lerp_color(defaultColor, pressedColor, t);
       const svg = trigger.toUpperCase() + '_infill';
@@ -975,9 +1019,9 @@ function update_ds_button_svg(changes, BUTTON_MAP) {
   }
 }
 
-function set_svg_group_color(group, color) {
+function set_svg_group_color(group: Element | null, color: string): void {
   if (group) {
-    const elements = group.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon');
+    const elements = group.querySelectorAll<SVGElement>('path,rect,circle,ellipse,line,polyline,polygon');
     elements.forEach(el => {
       // Set up a smooth transition for fill and stroke if not already set
       if (!el.style.transition) {
@@ -990,9 +1034,9 @@ function set_svg_group_color(group, color) {
 }
 
 let hasActiveTouchPoints = false;
-let trackpadBbox = undefined;
+let trackpadBbox: DOMRect | undefined = undefined;
 
-function update_touchpad_circles(points) {
+function update_touchpad_circles(points: TouchPoint[]): void {
   const hasActivePointsNow = points.some(pt => pt.active);
   if(!hasActivePointsNow && !hasActiveTouchPoints) return;
 
@@ -1005,6 +1049,7 @@ function update_touchpad_circles(points) {
   trackpad.querySelectorAll('circle.ds-touch').forEach(c => c.remove());
   hasActiveTouchPoints = hasActivePointsNow;
   trackpadBbox = trackpadBbox ?? trackpad.querySelector('path')?.getBBox();
+  const bbox = trackpadBbox!;
 
   // Draw up to 2 circles
   points.forEach((pt, idx) => {
@@ -1012,14 +1057,14 @@ function update_touchpad_circles(points) {
     // Map raw x/y to SVG
     // DS4/DS5 touchpad is 1920x943 units (raw values)
     const RAW_W = 1920, RAW_H = 943;
-    const pointRadius = trackpadBbox.width * 0.05;
-    const cx = trackpadBbox.x + pointRadius + (pt.x / RAW_W) * (trackpadBbox.width - pointRadius*2);
-    const cy = trackpadBbox.y + pointRadius + (pt.y / RAW_H) * (trackpadBbox.height - pointRadius*2);
+    const pointRadius = bbox.width * 0.05;
+    const cx = bbox.x + pointRadius + (pt.x / RAW_W) * (bbox.width - pointRadius*2);
+    const cy = bbox.y + pointRadius + (pt.y / RAW_H) * (bbox.height - pointRadius*2);
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('class', 'ds-touch');
-    circle.setAttribute('cx', cx);
-    circle.setAttribute('cy', cy);
-    circle.setAttribute('r', pointRadius);
+    circle.setAttribute('cx', String(cx));
+    circle.setAttribute('cy', String(cy));
+    circle.setAttribute('r', String(pointRadius));
     circle.setAttribute('fill', idx === 0 ? '#2196f3' : '#e91e63');
     circle.setAttribute('fill-opacity', '0.5');
     circle.setAttribute('stroke', '#3399cc');
@@ -1028,12 +1073,12 @@ function update_touchpad_circles(points) {
   });
 }
 
-function update_stop_sliders(changes) {
-  const sliderYOffset = { 0: 0, 1: 16, 2: 31, };
+function update_stop_sliders(changes: InputChanges | ButtonStates): void {
+  const sliderYOffset: Record<number, number> = { 0: 0, 1: 16, 2: 31, };
   if (typeof changes?.l2_stop_slider !== 'undefined') {
     const l2Handle = document.getElementById('L2_stop_slider_handle');
     if (l2Handle) {
-      const positionIndex = changes.l2_stop_slider;
+      const positionIndex = changes.l2_stop_slider as number;
       l2Handle.setAttribute('transform', `translate(0, ${sliderYOffset[positionIndex]})`);
     }
   }
@@ -1041,25 +1086,25 @@ function update_stop_sliders(changes) {
   if (typeof changes?.r2_stop_slider !== 'undefined') {
     const r2Handle = document.getElementById('R2_stop_slider_handle');
     if (r2Handle) {
-      const positionIndex = changes.r2_stop_slider;
+      const positionIndex = changes.r2_stop_slider as number;
       r2Handle.setAttribute('transform', `translate(0, ${sliderYOffset[positionIndex]})`);
     }
   }
 }
 
-function get_current_main_tab() {
+function get_current_main_tab(): string {
   const mainTabs = document.getElementById('mainTabs');
   const activeBtn = mainTabs?.querySelector('.nav-link.active');
   return activeBtn?.id || 'controller-tab';
 }
 
-function get_current_test_tab() {
+function get_current_test_tab(): string {
   const testsList = document.getElementById('tests-list');
   const activeBtn = testsList?.querySelector('.list-group-item.active');
   return activeBtn?.id || 'haptic-test-tab';
 }
 
-function detectFailedRangeCalibration(changes) {
+function detectFailedRangeCalibration(changes: InputChanges): void {
   if (!changes.sticks || app.shownRangeCalibrationWarning) return;
 
   const { left, right } = changes.sticks;
@@ -1076,26 +1121,26 @@ function detectFailedRangeCalibration(changes) {
     Storage.failedCalibrationCount.set(app.failedCalibrationModalShownCount);
 
     app.shownRangeCalibrationWarning = true;
-    if (app.failedCalibrationCount <= 6) {  // keep it from getting annoying
+    if (app.failedCalibrationModalShownCount <= 6) {  // keep it from getting annoying
       show_popup(l("Range calibration appears to have failed. Please try again and make sure you rotate the sticks."));
     }
   }
 }
 
-function isRangeCalibrationVisible() {
+function isRangeCalibrationVisible(): boolean {
   const modal = document.getElementById('rangeModal');
   if (!modal) return false;
   return modal.classList.contains('show');
 }
 
 // Callback function to handle UI updates after controller input processing
-function handleControllerInput({ changes, inputConfig, touchPoints, batteryStatus }) {
+function handleControllerInput({ changes, inputConfig, touchPoints, batteryStatus }: InputResult): void {
   const { buttonMap } = inputConfig;
 
   // Open Quick Test modal if options button is pressed while L1 is held down
-  if (changes.options && controller.button_states.l1) {
+  if (changes.options && controller!.button_states.l1) {
     update_ds_button_svg({ l1: false }, buttonMap); // Clear L1
-    show_quick_test_modal(controller);
+    show_quick_test_modal(controller!);
     return;
   }
 
@@ -1120,7 +1165,7 @@ function handleControllerInput({ changes, inputConfig, touchPoints, batteryStatu
         finetune_handle_controller_input(changes);
       } else {
         update_stick_graphics(changes);
-        if (controller.getModel() === 'VR2') {
+        if (controller!.getModel() === 'VR2') {
           update_vr2_button_panel(changes);
         } else {
           update_ds_button_svg(changes, buttonMap);
@@ -1139,15 +1184,15 @@ function handleControllerInput({ changes, inputConfig, touchPoints, batteryStatu
   update_battery_status(batteryStatus);
 }
 
-function handle_test_input(/* changes */) {
+function handle_test_input(_changes: InputChanges): void {
   const current_test_tab = get_current_test_tab();
 
   // Handle different test tabs
   switch (current_test_tab) {
     case 'haptic-test-tab':
       // Handle L2/R2 for haptic feedback
-      const l2 = controller.button_states.l2_analog || 0;
-      const r2 = controller.button_states.r2_analog || 0;
+      const l2 = controller!.button_states.l2_analog || 0;
+      const r2 = controller!.button_states.r2_analog || 0;
       if (l2 || r2) {
         // trigger_haptic_motors(l2, r2);
       }
@@ -1160,7 +1205,7 @@ function handle_test_input(/* changes */) {
   }
 }
 
-function update_disable_btn() {
+function update_disable_btn(): void {
   const { disable_btn, last_disable_btn } = app;
   if(disable_btn == last_disable_btn)
     return;
@@ -1183,53 +1228,53 @@ function update_disable_btn() {
   app.last_disable_btn = disable_btn;
 }
 
-async function handleLanguageChange() {
+async function handleLanguageChange(): Promise<void> {
   if(!controller) return;
 
-  const { infoItems } = await controller.getDeviceInfo();
-  render_info_to_dom(infoItems);
+  const info = await controller.getDeviceInfo();
+  render_info_to_dom(info!.ok ? info!.infoItems : undefined);
 }
 
-function handleNvStatusUpdate(nv) {
+function handleNvStatusUpdate(nv: NvStatus): void {
   // Refresh NVS status display when it changes
   render_nvstatus_to_dom(nv);
 }
 
-async function flash_all_changes() {
-  const isEdge = controller.getModel() == "DS5_Edge";
+async function flash_all_changes(): Promise<void> {
+  const isEdge = controller!.getModel() == "DS5_Edge";
   const progressCallback = isEdge ? set_edge_progress : null;
   const edgeProgressModal = isEdge ? bootstrap.Modal.getOrCreateInstance('#edgeProgressModal') : null;
   edgeProgressModal?.show();
 
-  const result = await controller.flash(progressCallback);
+  const result = await controller!.flash(progressCallback);
   edgeProgressModal?.hide();
 
   if (result?.success) {
     if(result.isHtml) {
-      show_popup(result.message, result.isHtml);
+      show_popup(result.message!, result.isHtml);
     } else {
-      successAlert(result.message);
+      successAlert(result.message!);
     }
   }
 }
 
-async function reboot_controller() {
-  await controller.reset();
+async function reboot_controller(): Promise<void> {
+  await controller!.reset();
 }
 
-async function nvsunlock() {
-  await controller.nvsUnlock();
+async function nvsunlock(): Promise<void> {
+  await controller!.nvsUnlock();
 }
 
 async function nvslock() {
-  return await controller.nvsLock();
+  return await controller!.nvsLock();
 }
 
-function close_all_modals() {
+function close_all_modals(): void {
   $('.modal.show').modal('hide'); // Close any open modals
 }
 
-function render_info_to_dom(infoItems) {
+function render_info_to_dom(infoItems: InfoItem[] | undefined): void {
   // Clear all info sections
   $("#fwinfo").html("");
   $("#fwinfoextra-hw").html("");
@@ -1246,7 +1291,7 @@ function render_info_to_dom(infoItems) {
 
     // Apply severity formatting if requested
     if (severity) {
-      const colors = { danger: 'red', success: 'green' }
+      const colors: Record<string, string> = { danger: 'red', success: 'green' }
       const color = colors[severity] || 'black';
       valueHtml = `<font color='${color}'><b>${valueHtml}</b></font>`;
     }
@@ -1259,15 +1304,15 @@ function render_info_to_dom(infoItems) {
   });
 }
 
-function copyValueToClipboard(text) {
+function copyValueToClipboard(text: string): void {
   navigator.clipboard.writeText(text).then(function() {
     infoAlert(l("The item has been copied to the clipboard."), 2000);
   }).catch(function(err) {
-    errorAlert(l("Cannot copy text to the clipboard:") + " " + str(err));
+    errorAlert(l("Cannot copy text to the clipboard:") + " " + String(err));
   });
 }
 
-function genCopyString(value, copyable) {
+function genCopyString(value: string, copyable: boolean): string {
   if(!copyable)
     return '';
 
@@ -1277,21 +1322,21 @@ function genCopyString(value, copyable) {
   return '&nbsp;<i style="cursor:pointer;" class="fa-regular fa-copy" onclick=\'copyValueToClipboard("' + escapedValue + '")\'></i>';
 }
 
-function appendInfoExtra(key, value, cat, copyable) {
+function appendInfoExtra(key: string, value: string, cat: string, copyable: boolean): void {
   // TODO escape html
   const s = '<dt class="text-muted col-sm-4 col-md-6 col-xl-5">' + key + '</dt><dd class="col-sm-8 col-md-6 col-xl-7" style="text-align: right;">' + value + genCopyString(value, copyable) + '</dd>';
   $("#fwinfoextra-" + cat).html($("#fwinfoextra-" + cat).html() + s);
 }
 
 
-function appendInfo(key, value, cat, copyable) {
+function appendInfo(key: string, value: string, cat: string, copyable: boolean): void {
   // TODO escape html
   const s = '<dt class="text-muted col-6">' + key + '</dt><dd class="col-6" style="text-align: right;">' + value + genCopyString(value, copyable) + '</dd>';
   $("#fwinfo").html($("#fwinfo").html() + s);
   appendInfoExtra(key, value, cat, copyable);
 }
 
-function show_popup(text, is_html = false) {
+function show_popup(text: string, is_html = false): void {
   if(is_html) {
     $("#popupBody").html(text);
   } else {
@@ -1300,17 +1345,17 @@ function show_popup(text, is_html = false) {
   bootstrap.Modal.getOrCreateInstance('#popupModal').show();
 }
 
-function show_faq_modal() {
+function show_faq_modal(): void {
   la("faq_modal");
   bootstrap.Modal.getOrCreateInstance('#faqModal').show();
 }
 
-function show_donate_modal() {
+function show_donate_modal(): void {
   la("donate_modal");
   bootstrap.Modal.getOrCreateInstance('#donateModal').show();
 }
 
-function show_edge_modal() {
+function show_edge_modal(): void {
   // Check if user has chosen not to show the modal again
   if (Storage.edgeModalDontShowAgain.get()) {
     return;
@@ -1320,12 +1365,12 @@ function show_edge_modal() {
   bootstrap.Modal.getOrCreateInstance('#edgeModal').show();
 }
 
-function show_info_tab() {
+function show_info_tab(): void {
   la("info_modal");
   $('#info-tab').tab('show');
 }
 
-function show_circularity_warning() {
+function show_circularity_warning(): void {
   const message = `<p>
   ${l("Sony controllers come from the factory calibrated to have an average circularity error of nearly 10 %, and this is now what games expect. Too perfect circularity can make movements and aim feel stiff and unresponsive in some games.")
   }</p><p>
@@ -1339,13 +1384,13 @@ let alertCounter = 0;
 
 /**
  * Push a new alert message to the bottom of the screen
- * @param {string} message - The message to display
- * @param {string} type - Bootstrap alert type: 'primary', 'secondary', 'success', 'danger', 'warning', 'info', 'light', 'dark'
- * @param {number} duration - Auto-dismiss duration in milliseconds (0 = no auto-dismiss)
- * @param {boolean} dismissible - Whether the alert can be manually dismissed
- * @returns {string} - The ID of the created alert element
+ * @param message - The message to display
+ * @param type - Bootstrap alert type: 'primary', 'secondary', 'success', 'danger', 'warning', 'info', 'light', 'dark'
+ * @param duration - Auto-dismiss duration in milliseconds (0 = no auto-dismiss)
+ * @param dismissible - Whether the alert can be manually dismissed
+ * @returns The ID of the created alert element
  */
-function pushAlert(message, type = 'info', duration = 0, dismissible = true) {
+function pushAlert(message: string | null | undefined, type = 'info', duration = 0, dismissible = true): string | null {
   const alertContainer = document.getElementById('alert-container');
   if (!alertContainer) {
   console.error('Alert container not found');
@@ -1373,7 +1418,7 @@ function pushAlert(message, type = 'info', duration = 0, dismissible = true) {
   return alertId;
 }
 
-function dismissAlert(alertId) {
+function dismissAlert(alertId: string): void {
   const alertElement = document.getElementById(alertId);
   if (alertElement) {
     const bsAlert = new bootstrap.Alert(alertElement);
@@ -1381,7 +1426,7 @@ function dismissAlert(alertId) {
   }
 }
 
-function clearAllAlerts() {
+function clearAllAlerts(): void {
   const alertContainer = document.getElementById('alert-container');
   if (alertContainer) {
     const alerts = alertContainer.querySelectorAll('.alert');
@@ -1392,19 +1437,19 @@ function clearAllAlerts() {
   }
 }
 
-function successAlert(message, duration = 1_500) {
+function successAlert(message: string, duration = 1_500): string | null {
   return pushAlert(message, 'success', duration, false);
 }
 
-function errorAlert(message, duration = 15_000) {
+function errorAlert(message: string, duration = 15_000): string | null {
   return pushAlert(message, 'danger', /* duration */);
 }
 
-function warningAlert(message, duration = 8_000) {
+function warningAlert(message: string, duration = 8_000): string | null {
   return pushAlert(message, 'warning', duration);
 }
 
-function infoAlert(message, duration = 5_000) {
+function infoAlert(message: string | null | undefined, duration = 5_000): string | null {
   return pushAlert(message, 'info', duration, false);
 }
 
@@ -1414,6 +1459,33 @@ function infoAlert(message, duration = 5_000) {
 
 
 // Export functions to global scope for HTML onclick handlers
+declare global {
+  interface Window {
+    gboot: typeof gboot;
+    connect: typeof connect;
+    disconnect: typeof disconnectSync;
+    show_faq_modal: typeof show_faq_modal;
+    show_info_tab: typeof show_info_tab;
+    copyValueToClipboard: typeof copyValueToClipboard;
+    calibrate_stick_centers: () => Promise<void>;
+    ds5_finetune: () => Promise<void>;
+    openCalibrationHistoryModal: () => Promise<void>;
+    flash_all_changes: typeof flash_all_changes;
+    reboot_controller: typeof reboot_controller;
+    refresh_nvstatus: typeof refresh_nvstatus;
+    nvsunlock: typeof nvsunlock;
+    setCenterCalibrationMethod: (method: CenterCalibrationMethod, event?: Event) => void;
+    executeSelectedCenterCalibration: () => void;
+    setRangeCalibrationMethod: (method: RangeCalibrationMethod, event?: Event) => void;
+    executeSelectedRangeCalibration: () => void;
+    nvslock: typeof nvslock;
+    welcome_accepted: typeof welcome_accepted;
+    show_donate_modal: typeof show_donate_modal;
+    show_circularity_warning: typeof show_circularity_warning;
+    show_quick_test_modal: () => void;
+  }
+}
+
 window.gboot = gboot;
 window.connect = connect;
 window.disconnect = disconnectSync;
@@ -1422,7 +1494,7 @@ window.show_info_tab = show_info_tab;
 window.copyValueToClipboard = copyValueToClipboard;
 
 window.calibrate_stick_centers = () => calibrate_stick_centers(
-  controller,
+  controller!,
   (success, message) => {
     if (success) {
       resetStickDiagrams();
@@ -1433,22 +1505,22 @@ window.calibrate_stick_centers = () => calibrate_stick_centers(
 );
 
 window.ds5_finetune = () => ds5_finetune(
-  controller,
+  controller!,
   { ll_data, rr_data, clear_circularity },
   (success) => success && switchToRangeMode()
 );
 
 window.openCalibrationHistoryModal = async () => {
-  let currentFinetuneData = null;
-  let controllerSerialNumber = null;
+  let currentFinetuneData: number[] | null = null;
+  let controllerSerialNumber: string | null = null;
   try {
     if (controller && typeof controller.getInMemoryModuleData === 'function') {
-      currentFinetuneData = await controller.getInMemoryModuleData('finetune');
+      currentFinetuneData = await controller.getInMemoryModuleData();
     }
     if (controller && typeof controller.getDeviceInfo === 'function') {
       const info = await controller.getDeviceInfo();
-      const serialNumberItem = info?.infoItems?.find(item => item.key === l("Serial Number"));
-      controllerSerialNumber = serialNumberItem?.value;
+      const serialNumberItem = info?.ok ? info.infoItems.find(item => item.key === l("Serial Number")) : undefined;
+      controllerSerialNumber = serialNumberItem?.value ?? null;
     }
   } catch (error) {
     console.warn('Could not retrieve current finetune data or serial number:', error);
@@ -1475,7 +1547,7 @@ window.setCenterCalibrationMethod = (method, event) => {
   Storage.centerCalibrationMethod.set(method);
   updateCalibrationMethodUI();
   // Close the dropdown
-  const dropdownButton = event?.target?.closest('.dropdown-menu')?.previousElementSibling;
+  const dropdownButton = (event?.target as Element | undefined)?.closest('.dropdown-menu')?.previousElementSibling;
   if (dropdownButton) {
     const dropdown = bootstrap.Dropdown.getInstance(dropdownButton);
     if (dropdown) dropdown.hide();
@@ -1485,7 +1557,7 @@ window.setCenterCalibrationMethod = (method, event) => {
 window.executeSelectedCenterCalibration = () => {
   if (app.centerCalibrationMethod === 'quick') {
     auto_calibrate_stick_centers(
-      controller,
+      controller!,
       (success, message) => {
         if (success) {
           resetStickDiagrams();
@@ -1496,7 +1568,7 @@ window.executeSelectedCenterCalibration = () => {
     );
   } else {
     calibrate_stick_centers(
-      controller,
+      controller!,
       (success, message) => {
         if (success) {
           resetStickDiagrams();
@@ -1517,7 +1589,7 @@ window.setRangeCalibrationMethod = (method, event) => {
   Storage.rangeCalibrationMethod.set(method);
   updateCalibrationMethodUI();
   // Close the dropdown
-  const dropdownButton = event?.target?.closest('.dropdown-menu')?.previousElementSibling;
+  const dropdownButton = (event?.target as Element | undefined)?.closest('.dropdown-menu')?.previousElementSibling;
   if (dropdownButton) {
     const dropdown = bootstrap.Dropdown.getInstance(dropdownButton);
     if (dropdown) dropdown.hide();
@@ -1526,7 +1598,7 @@ window.setRangeCalibrationMethod = (method, event) => {
 
 window.executeSelectedRangeCalibration = () => {
   calibrate_range(
-    controller,
+    controller!,
     { ll_data, rr_data },
     (success, message) => {
       resetStickDiagrams();
@@ -1539,14 +1611,14 @@ window.executeSelectedRangeCalibration = () => {
   );
 };
 
-function updateCalibrationMethodUI() {
+function updateCalibrationMethodUI(): void {
   $('#check-quick').toggle(app.centerCalibrationMethod === 'quick');
   $('#check-four-step').toggle(app.centerCalibrationMethod === 'four-step');
   $('#check-range-normal').toggle(app.rangeCalibrationMethod === 'normal');
   $('#check-range-expert').toggle(app.rangeCalibrationMethod === 'expert');
 }
 
-function initCalibrationMethod() {
+function initCalibrationMethod(): void {
   const savedCenterMethod = Storage.centerCalibrationMethod.get();
   if (savedCenterMethod && (savedCenterMethod === 'quick' || savedCenterMethod === 'four-step')) {
     app.centerCalibrationMethod = savedCenterMethod;
@@ -1569,7 +1641,7 @@ window.welcome_accepted = welcome_accepted;
 window.show_donate_modal = show_donate_modal;
 window.show_circularity_warning = show_circularity_warning;
 window.show_quick_test_modal = () => {
-  show_quick_test_modal(controller).catch(error => {
+  show_quick_test_modal(controller!).catch(error => {
     throw new Error("Failed to show quick test modal", { cause: error });
   });
 };

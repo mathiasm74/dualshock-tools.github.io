@@ -12,11 +12,6 @@
     // Rollup does the bundling; tsc is only used for type checking.
     "noEmit": true,
 
-    // Allow incremental migration: .js and .ts files can import each other.
-    // Plain .js files are not type checked until they are converted.
-    "allowJs": true,
-    "checkJs": false,
-
     "strict": true,
     "isolatedModules": true,
     "skipLibCheck": true

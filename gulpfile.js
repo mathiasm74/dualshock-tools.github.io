@@ -31,8 +31,8 @@ const isProduction = argv.production || process.env.NODE_ENV === 'production';
 const paths = {
   src: {
     js: {
-      entry: 'js/core.js',
-      all: 'js/**/*.{js,ts}'
+      entry: 'js/core.ts',
+      all: 'js/**/*.ts'
     },
     scss: ['scss/main.scss', 'scss/finetune.scss'],
     html: {
@@ -212,7 +212,7 @@ async function html() {
   let htmlContent = await fs.readFile(paths.src.html.main, 'utf8');
   
   // Replace script and CSS references
-  htmlContent = htmlContent.replace('<script type="module" src="js/core.js"></script>', `<script type="module" src="${jsFile}"></script>`);
+  htmlContent = htmlContent.replace('<script type="module" src="js/core.ts"></script>', `<script type="module" src="${jsFile}"></script>`);
   htmlContent = htmlContent.replace('<link rel="stylesheet" href="css/main.css">', '');
   htmlContent = htmlContent.replace('<link rel="stylesheet" href="css/finetune.css">', `<link rel="stylesheet" href="${cssFile}">`);
 
