@@ -1,6 +1,7 @@
 'use strict';
 
 import { l } from '../../translations.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
 
 /**
  * Microphone test: monitors the controller mic's input level, buzzes the
@@ -11,14 +12,19 @@ export class MicrophoneTest {
   static testName = 'Microphone';
   static icon = 'fas fa-microphone';
 
-  constructor(host) {
+  host: QuickTestModal;
+  stream: MediaStream | null;
+  audioContext: AudioContext | null;
+  monitoring: boolean;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
     this.stream = null;
     this.audioContext = null;
     this.monitoring = false;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');
@@ -45,7 +51,7 @@ export class MicrophoneTest {
     `;
   }
 
-  async start() {
+  async start(): Promise<void> {
     const $levelContainer = $('#mic-level-container');
     const $levelBar = $('#mic-level-bar');
 
@@ -66,7 +72,7 @@ export class MicrophoneTest {
       });
 
       // Create audio context and analyzer
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioContext = new (window.AudioContext || window.webkitAudioContext!)();
       const source = audioContext.createMediaStreamSource(stream);
       const analyzer = audioContext.createAnalyser();
 
@@ -111,7 +117,7 @@ export class MicrophoneTest {
 
         if (count > 5) {
           const activeTest = this.host.getCurrentActiveTest();
-          this.host.markTestResult(activeTest, true);
+          this.host.markTestResult(activeTest!, true);
         }
 
         requestAnimationFrame(updateLevel);
@@ -124,7 +130,7 @@ export class MicrophoneTest {
     }
   }
 
-  stop() {
+  stop(): void {
     const $levelContainer = $('#mic-level-container');
 
     this.monitoring = false;

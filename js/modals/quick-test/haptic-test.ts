@@ -1,6 +1,7 @@
 'use strict';
 
 import { l } from '../../translations.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
 
 /**
  * Haptic vibration test: fires the heavy motor, then the light one
@@ -10,11 +11,13 @@ export class HapticTest {
   static testName = 'Haptic Vibration';
   static icon = 'fas fa-mobile-alt';
 
-  constructor(host) {
+  host: QuickTestModal;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');
@@ -38,7 +41,7 @@ export class HapticTest {
     `;
   }
 
-  async start() {
+  async start(): Promise<void> {
     this.host.startIconAnimation('haptic');
     await this.host.controller.setVibration({ heavyLeft: 255, lightRight: 0, duration: 500 }, async () => {
       await setTimeout(async () => {

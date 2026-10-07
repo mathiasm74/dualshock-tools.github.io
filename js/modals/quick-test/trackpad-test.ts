@@ -2,6 +2,18 @@
 
 import { l } from '../../translations.js';
 import { setCheckBadge } from './utils.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
+import type { InputChanges, TouchPoint } from '../../controller-manager.js';
+
+interface TrailPoint { x: number, y: number, t: number }
+
+interface TrackpadStats {
+  travel: number;
+  bothFingersSeen: boolean;
+  clicked: boolean;
+  lastPoints: ({ id: number, x: number, y: number } | null)[];
+  autoPassTimer: ReturnType<typeof setTimeout> | null;
+}
 
 // Trackpad test tuning
 const TRACKPAD_MOVE_PASS_UNITS = 500;      // accumulated finger travel (raw units, pad is 1920 wide) that counts as "movement"
@@ -20,7 +32,15 @@ export class TrackpadTest {
   static testName = 'Trackpad';
   static icon = 'fas fa-fingerprint';
 
-  constructor(host) {
+  host: QuickTestModal;
+  monitoring: boolean;
+  stats: TrackpadStats | null;
+  /** One trail per finger; null breaks the line between strokes */
+  trails: (TrailPoint | null)[][];
+  rafId: number | null;
+  autoPassArmed: boolean;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
     this.monitoring = false;
     this.stats = null;
@@ -29,14 +49,14 @@ export class TrackpadTest {
     this.autoPassArmed = false;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');
     const trackpadTestDesc = l("This test checks the trackpad's touch tracking, two-finger detection, and click.");
     const trackpadInstructions = l('Draw on the trackpad below with one finger, touch it with two fingers at once, and click it until every check turns green.');
     const trackpadRestart = l('Restart');
-    const trackpadCheck = (id, label) => `
+    const trackpadCheck = (id: string, label: string) => `
       <div class="d-flex align-items-center me-3">
         <span class="badge bg-secondary test-check" id="${id}"><i class="far fa-circle"></i></span>
         <span class="ms-1">${label}</span>
@@ -64,7 +84,7 @@ export class TrackpadTest {
     `;
   }
 
-  start() {
+  start(): void {
     this.host.startIconAnimation('trackpad');
     this.monitoring = true;
     // Don't auto-close when revisiting a test whose checks were already all
@@ -77,7 +97,7 @@ export class TrackpadTest {
     this._startRenderLoop();
   }
 
-  stop() {
+  stop(): void {
     this.host.stopIconAnimation('trackpad');
     this.monitoring = false;
     if (this.rafId) {
@@ -91,7 +111,7 @@ export class TrackpadTest {
    * Restart the trackpad test: clear the checks and the finger trails,
    * and re-arm the auto-pass
    */
-  reset() {
+  reset(): void {
     this._resetStats();
     this.autoPassArmed = true;
   }
@@ -100,14 +120,14 @@ export class TrackpadTest {
    * Record one sample while this test is active (rendering happens on
    * animation frames)
    */
-  handleInput(changes, touchPoints) {
+  handleInput(changes: InputChanges, touchPoints: TouchPoint[]): void {
     this._recordSample(changes, touchPoints);
   }
 
   /**
    * Cancel a pending auto-pass countdown, if any
    */
-  _cancelAutoPass() {
+  _cancelAutoPass(): void {
     if (this.stats?.autoPassTimer) {
       clearTimeout(this.stats.autoPassTimer);
       this.stats.autoPassTimer = null;
@@ -117,7 +137,7 @@ export class TrackpadTest {
   /**
    * Reset trackpad activity stats and finger trails
    */
-  _resetStats() {
+  _resetStats(): void {
     this._cancelAutoPass();
     this.trails = [[], []];
     this.stats = {
@@ -133,7 +153,7 @@ export class TrackpadTest {
    * Record one trackpad sample: track finger travel, two-finger contact and
    * the click
    */
-  _recordSample(changes, touchPoints) {
+  _recordSample(changes: InputChanges, touchPoints: TouchPoint[]): void {
     if (!this.monitoring || !this.stats) return;
     const stats = this.stats;
 
@@ -162,7 +182,7 @@ export class TrackpadTest {
         stats.lastPoints[i] = point.active ? { id: point.id, x: point.x, y: point.y } : null;
         // Age out old points by time so the trail length is independent of
         // the controller's report rate (leading breaks are meaningless)
-        while (trail.length && (trail[0] === null || now - trail[0].t > TRACKPAD_TRAIL_MS)) {
+        while (trail.length && (trail[0] === null || now - trail[0]!.t > TRACKPAD_TRAIL_MS)) {
           trail.shift();
         }
       });
@@ -175,7 +195,7 @@ export class TrackpadTest {
    * Auto-pass the trackpad test shortly after movement, both fingers and the
    * click have all been seen
    */
-  _checkComplete() {
+  _checkComplete(): void {
     const stats = this.stats;
     if (!stats || stats.autoPassTimer || !this.autoPassArmed) return;
     if (!this._areAllChecksGreen(stats)) return;
@@ -188,14 +208,14 @@ export class TrackpadTest {
   /**
    * True when movement, two-finger contact and the click have all been seen
    */
-  _areAllChecksGreen(stats) {
+  _areAllChecksGreen(stats: TrackpadStats): boolean {
     return stats.travel >= TRACKPAD_MOVE_PASS_UNITS && stats.bothFingersSeen && stats.clicked;
   }
 
   /**
    * Render the trackpad panel on animation frames while the test is active
    */
-  _startRenderLoop() {
+  _startRenderLoop(): void {
     if (this.rafId) return;
     const render = () => {
       if (!this.monitoring) {
@@ -212,7 +232,7 @@ export class TrackpadTest {
    * Update the trackpad check badges and redraw the pad: finger trails,
    * current finger positions, and a tint while the pad is clicked
    */
-  _renderPanel() {
+  _renderPanel(): void {
     const stats = this.stats;
     if (!stats) return;
 
@@ -220,7 +240,7 @@ export class TrackpadTest {
     setCheckBadge('trackpad-check-both', stats.bothFingersSeen);
     setCheckBadge('trackpad-check-click', stats.clicked);
 
-    const canvas = document.getElementById('trackpad-canvas');
+    const canvas = document.getElementById('trackpad-canvas') as HTMLCanvasElement | null;
     if (!canvas) return;
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
@@ -232,7 +252,7 @@ export class TrackpadTest {
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
     }
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
@@ -245,7 +265,7 @@ export class TrackpadTest {
     const padH = padUnitsY * scale;
     const padX = (width - padW) / 2;
     const padY = (height - padH) / 2;
-    const toCanvas = (p) => ({ x: padX + p.x * scale, y: padY + p.y * scale });
+    const toCanvas = (p: { x: number, y: number }) => ({ x: padX + p.x * scale, y: padY + p.y * scale });
 
     // Pad outline, tinted while the pad is physically clicked
     ctx.fillStyle = this.host.controller.button_states.touchpad ? 'rgba(13, 110, 253, 0.25)' : 'rgba(128, 128, 128, 0.12)';
@@ -274,7 +294,7 @@ export class TrackpadTest {
       });
       ctx.stroke();
 
-      const current = this.stats.lastPoints[i];
+      const current = stats.lastPoints[i];
       if (current) {
         const { x, y } = toCanvas(current);
         ctx.fillStyle = TRACKPAD_FINGER_COLORS[i];

@@ -526,7 +526,7 @@ class ControllerManager {
    * @param doneCb - Callback function called when vibration ends (optional)
    */
   async setVibration(
-    {heavyLeft, lightRight, duration = 0}: { heavyLeft: number, lightRight: number, duration?: number },
+    {heavyLeft, lightRight, duration = 0}: { heavyLeft: number, lightRight?: number, duration?: number },
     doneCb: DoneCallback = ({success}) => {}
   ): Promise<void> {
     try {

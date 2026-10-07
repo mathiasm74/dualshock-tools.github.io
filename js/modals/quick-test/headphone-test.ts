@@ -1,6 +1,7 @@
 'use strict';
 
 import { l } from '../../translations.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
 
 /**
  * Headphone jack test: plays a tone routed to the 3.5mm jack on demand
@@ -10,11 +11,13 @@ export class HeadphoneTest {
   static testName = 'Headphone Jack';
   static icon = 'fas fa-headphones';
 
-  constructor(host) {
+  host: QuickTestModal;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');
@@ -47,7 +50,7 @@ export class HeadphoneTest {
    * Play a test tone routed to the headphone output instead of the
    * built-in speaker
    */
-  async testAudio() {
+  async testAudio(): Promise<void> {
     this.host.startIconAnimation('headphone');
 
     try {

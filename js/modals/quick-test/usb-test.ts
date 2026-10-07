@@ -1,6 +1,7 @@
 'use strict';
 
 import { l } from '../../translations.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
 
 /**
  * USB connector test: fully manual - wiggle the cable, watch for disconnects
@@ -10,11 +11,13 @@ export class UsbTest {
   static testName = 'USB Connector';
   static icon = 'fas fa-plug';
 
-  constructor(host) {
+  host: QuickTestModal;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');

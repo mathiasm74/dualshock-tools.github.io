@@ -14,11 +14,48 @@ import { LightsTest } from './quick-test/lights-test.js';
 import { SpeakerTest } from './quick-test/speaker-test.js';
 import { HeadphoneTest } from './quick-test/headphone-test.js';
 import { MicrophoneTest } from './quick-test/microphone-test.js';
+import type {
+  ControllerBatteryStatus,
+  ControllerManager,
+  InputChanges,
+  TouchPoint,
+} from '../controller-manager.js';
+
+/** An instance of one quick test; all hooks besides content() are optional */
+export interface QuickTest {
+  /** HTML for the test's accordion body */
+  content(): string;
+  /** Set up DOM after the accordion is (re)built */
+  init?(): Promise<void>;
+  start?(): unknown;
+  stop?(): unknown;
+  reset?(): void;
+  /** Receives every input report while the test is active */
+  handleInput?(changes: InputChanges, touchPoints: TouchPoint[]): void;
+}
+
+export interface QuickTestClass {
+  readonly id: string;
+  readonly testName: string;
+  /** Font Awesome classes */
+  readonly icon: string;
+  /** If true, the test consumes all input and navigation is disabled */
+  readonly capturesInput?: boolean;
+  new (host: QuickTestModal): QuickTest;
+}
+
+/** Each test's result (null = not tested yet), plus sequence state */
+interface QuickTestState {
+  isTransitioning: boolean;
+  skippedTests: string[];
+  batteryAlertShown: boolean;
+  [testType: string]: boolean | null | string[];
+}
 
 // One class per test, in accordion/sequence order. Each defines its id,
 // name, icon and content, plus optional init/start/stop/reset/handleInput
 // hooks - see the classes for the contract.
-const TEST_CLASSES = [
+const TEST_CLASSES: QuickTestClass[] = [
   UsbTest,
   ButtonsTest,
   TrackpadTest,
@@ -38,7 +75,14 @@ const TEST_SEQUENCE = TEST_CLASSES.map(cls => cls.id);
  * owns the test sequence, results, navigation and skip management
  */
 export class QuickTestModal {
-  constructor(controllerInstance) {
+  controller: ControllerManager;
+  tests: Record<string, QuickTest>;
+  state!: QuickTestState;
+  _boundAccordionShown: (event: JQuery.TriggeredEvent) => void;
+  _boundAccordionHidden: (event: JQuery.TriggeredEvent) => void;
+  _boundModalHidden: () => void;
+
+  constructor(controllerInstance: ControllerManager) {
     this.controller = controllerInstance;
 
     // Instantiate one test object per test type
@@ -64,7 +108,7 @@ export class QuickTestModal {
     this._initEventListeners();
   }
 
-  _initializeState() {
+  _initializeState(): void {
     this.state = {
       isTransitioning: false,
       skippedTests: [],
@@ -82,7 +126,7 @@ export class QuickTestModal {
   /**
    * Start icon animation for a specific test type
    */
-  startIconAnimation(testType) {
+  startIconAnimation(testType: string): void {
     const $accordionItem = $(`#${testType}-test-item`);
     const $icon = $accordionItem.find('.accordion-button i');
     $icon.addClass(`test-icon-${testType}`);
@@ -91,7 +135,7 @@ export class QuickTestModal {
   /**
    * Stop icon animation for a specific test type
    */
-  stopIconAnimation(testType) {
+  stopIconAnimation(testType: string): void {
     const $accordionItem = $(`#${testType}-test-item`);
     const $icon = $accordionItem.find('.accordion-button i');
     $icon.removeClass(`test-icon-${testType}`);
@@ -100,14 +144,14 @@ export class QuickTestModal {
   /**
    * Whether a controller-driven transition is currently being debounced
    */
-  isTransitioning() {
+  isTransitioning(): boolean {
     return this.state.isTransitioning;
   }
 
   /**
    * Set transitioning state to prevent rapid button presses
    */
-  setTransitioning() {
+  setTransitioning(): void {
     this.state.isTransitioning = true;
     setTimeout(() => {
       this.state.isTransitioning = false;
@@ -117,7 +161,7 @@ export class QuickTestModal {
   /**
    * Get the currently active (expanded) test type
    */
-  getCurrentActiveTest() {
+  getCurrentActiveTest(): string | null {
     for (const test of TEST_SEQUENCE) {
       // Skip tests that are in the skipped list
       if (this.state.skippedTests.includes(test)) {
@@ -134,7 +178,7 @@ export class QuickTestModal {
   /**
    * Expand the next untested item
    */
-  expandNextTest(currentTest) {
+  expandNextTest(currentTest: string): void {
     const currentIndex = TEST_SEQUENCE.indexOf(currentTest);
 
     // Always collapse the current test first
@@ -165,7 +209,7 @@ export class QuickTestModal {
   /**
    * Move to the previous test in the sequence
    */
-  moveToPreviousTest() {
+  moveToPreviousTest(): void {
     const activeTest = this.getCurrentActiveTest();
     if (!activeTest) return;
 
@@ -202,7 +246,7 @@ export class QuickTestModal {
   /**
    * Mark test result and update UI
    */
-  markTestResult(testType, passed) {
+  markTestResult(testType: string, passed: boolean): void {
     this.state[testType] = passed;
 
     this.stopIconAnimation(testType);
@@ -243,7 +287,7 @@ export class QuickTestModal {
   /**
    * Save skipped tests to storage
    */
-  _saveSkippedTestsToStorage() {
+  _saveSkippedTestsToStorage(): void {
     try {
       Storage.quickTestSkippedTests.set(this.state.skippedTests);
     } catch (error) {
@@ -254,7 +298,7 @@ export class QuickTestModal {
   /**
    * Load skipped tests from storage
    */
-  _loadSkippedTestsFromStorage() {
+  _loadSkippedTestsFromStorage(): void {
     try {
       const skippedTests = Storage.quickTestSkippedTests.get();
       if (Array.isArray(skippedTests) && skippedTests.length > 0) {
@@ -270,7 +314,7 @@ export class QuickTestModal {
   /**
    * Clear saved skipped tests from storage
    */
-  _clearSkippedTestsFromStorage() {
+  _clearSkippedTestsFromStorage(): void {
     try {
       Storage.quickTestSkippedTests.clear();
     } catch (error) {
@@ -281,7 +325,7 @@ export class QuickTestModal {
   /**
    * Skip a test and remove it from the accordion
    */
-  async skipTest(testType) {
+  async skipTest(testType: string): Promise<void> {
     // Add to skipped tests if not already there
     if (!this.state.skippedTests.includes(testType)) {
       this.state.skippedTests.push(testType);
@@ -305,7 +349,7 @@ export class QuickTestModal {
   /**
    * Add a test back from the skipped list
    */
-  async addTestBack(testType) {
+  async addTestBack(testType: string): Promise<void> {
     // Remove from skipped tests
     const index = this.state.skippedTests.indexOf(testType);
     if (index > -1) {
@@ -327,7 +371,7 @@ export class QuickTestModal {
   /**
    * Update the skipped tests dropdown
    */
-  _updateSkippedTestsDropdown() {
+  _updateSkippedTestsDropdown(): void {
     const $dropdown = $('#skipped-tests-dropdown');
     const $list = $('#skipped-tests-list');
 
@@ -340,7 +384,7 @@ export class QuickTestModal {
     $list.empty();
 
     this.state.skippedTests.forEach(testType => {
-      const testName = l(this.tests[testType].constructor.testName);
+      const testName = l((this.tests[testType].constructor as QuickTestClass).testName);
       const $item = $(`
         <li>
           <a class="dropdown-item" href="#" onclick="addTestBack('${testType}'); return false;">
@@ -360,7 +404,7 @@ export class QuickTestModal {
    * The tests currently shown in the accordion: supported by the connected
    * controller and not skipped, in sequence order
    */
-  _getActiveTests() {
+  _getActiveTests(): string[] {
     const supportedTests = this.controller.getSupportedQuickTests();
     return TEST_SEQUENCE.filter(testType =>
       !this.state.skippedTests.includes(testType) && supportedTests.includes(testType)
@@ -370,7 +414,7 @@ export class QuickTestModal {
   /**
    * Rebuild the accordion with the active tests and re-run their DOM setup
    */
-  async _applySkippedTestsToUI() {
+  async _applySkippedTestsToUI(): Promise<void> {
     this._buildDynamicAccordion();
     await this._initTests();
     this._updateSkippedTestsDropdown();
@@ -379,7 +423,7 @@ export class QuickTestModal {
   /**
    * Build dynamic accordion with only the active tests
    */
-  _buildDynamicAccordion() {
+  _buildDynamicAccordion(): void {
     const $accordion = $('#quickTestAccordion');
     $accordion.empty();
 
@@ -396,7 +440,7 @@ export class QuickTestModal {
    * Give each active test a chance to set up its DOM after the accordion
    * is (re)built - e.g. the buttons test loads the controller SVG
    */
-  async _initTests() {
+  async _initTests(): Promise<void> {
     for (const testType of this._getActiveTests()) {
       await this.tests[testType].init?.();
     }
@@ -405,8 +449,8 @@ export class QuickTestModal {
   /**
    * Create an accordion item for a specific test type
    */
-  _createAccordionItem(testType) {
-    const cls = this.tests[testType].constructor;
+  _createAccordionItem(testType: string): JQuery {
+    const cls = this.tests[testType].constructor as QuickTestClass;
     const testName = l(cls.testName);
 
     const testContent = this.tests[testType].content();
@@ -441,7 +485,7 @@ export class QuickTestModal {
   // ---------------------------------------------------------------------
 
   // Set up event listeners for accordion collapse events to auto-start tests
-  _initEventListeners() {
+  _initEventListeners(): void {
     // Remove existing listeners first
     this._removeAccordionEventListeners();
 
@@ -470,7 +514,7 @@ export class QuickTestModal {
   /**
    * Remove accordion event listeners only
    */
-  _removeAccordionEventListeners() {
+  _removeAccordionEventListeners(): void {
     // Remove listeners from all possible test elements
     TEST_SEQUENCE.forEach(testType => {
       const elementId = `${testType}-test-collapse`;
@@ -485,7 +529,7 @@ export class QuickTestModal {
   /**
    * Remove modal event listeners only
    */
-  _removeModalEventListeners() {
+  _removeModalEventListeners(): void {
     const $modal = $('#quickTestModal');
     $modal.off('hidden.bs.modal', this._boundModalHidden);
     $modal.off('shown.bs.modal');
@@ -494,7 +538,7 @@ export class QuickTestModal {
   /**
    * Remove event listeners
    */
-  removeEventListeners() {
+  removeEventListeners(): void {
     this._removeAccordionEventListeners();
     this._removeModalEventListeners();
   }
@@ -502,8 +546,8 @@ export class QuickTestModal {
   /**
    * Handle accordion section being shown (expanded)
    */
-  _handleAccordionShown(event) {
-    const collapseId = event.target.id;
+  _handleAccordionShown(event: JQuery.TriggeredEvent): void {
+    const collapseId = (event.target as HTMLElement).id;
     const testType = collapseId.replace('-test-collapse', '');
 
     // Update instructions when a test becomes active
@@ -519,8 +563,8 @@ export class QuickTestModal {
   /**
    * Handle accordion section being hidden (collapsed)
    */
-  _handleAccordionHidden(event) {
-    const collapseId = event.target.id;
+  _handleAccordionHidden(event: JQuery.TriggeredEvent): void {
+    const collapseId = (event.target as HTMLElement).id;
     const testType = collapseId.replace('-test-collapse', '');
 
     // Stop ongoing tests when section is collapsed
@@ -539,7 +583,7 @@ export class QuickTestModal {
   /**
    * Open the Quick Test modal
    */
-  async open() {
+  async open(): Promise<void> {
     la("quick_test_modal_open");
 
     // Build the dynamic accordion first
@@ -551,7 +595,7 @@ export class QuickTestModal {
   /**
    * Handle controller input for test navigation and control
    */
-  handleControllerInput(changes, batteryStatus, touchPoints) {
+  handleControllerInput(changes: InputChanges, batteryStatus: ControllerBatteryStatus | null, touchPoints: TouchPoint[]): void {
     if (this.state.isTransitioning) return;
 
     // Check battery status and show/hide warning if charge is 5% or less
@@ -571,14 +615,14 @@ export class QuickTestModal {
 
     // Tests that capture input (the buttons test) consume everything;
     // the others just observe the samples while navigation stays active
-    if (test?.constructor.capturesInput) {
-      test.handleInput(changes, touchPoints);
+    if ((test?.constructor as QuickTestClass | undefined)?.capturesInput) {
+      test!.handleInput!(changes, touchPoints);
       return;
     }
     test?.handleInput?.(changes, touchPoints);
 
     // Helper function to handle button press with transition
-    const handleButtonPress = (action) => {
+    const handleButtonPress = (action: () => void) => {
       this.setTransitioning();
       action();
     };
@@ -612,7 +656,7 @@ export class QuickTestModal {
   /**
    * Start the test sequence from the beginning
    */
-  async _startTestSequence() {
+  async _startTestSequence(): Promise<void> {
     // First, reset all tests to ensure clean state
     await this.resetAllTests();
 
@@ -634,7 +678,7 @@ export class QuickTestModal {
   /**
    * Reset all tests to initial state
    */
-  async resetAllTests() {
+  async resetAllTests(): Promise<void> {
     // Stop and reset every test's own state (timers, monitors, streams)
     TEST_SEQUENCE.forEach(testType => {
       this.tests[testType].stop?.();
@@ -686,7 +730,7 @@ export class QuickTestModal {
   /**
    * Update the instruction text based on current test state
    */
-  _updateInstructions() {
+  _updateInstructions(): void {
     const $instructionsText = $('#quick-test-instructions-text');
     const activeTest = this.getCurrentActiveTest();
     const allTestsCompleted = this._areAllTestsCompleted();
@@ -713,14 +757,14 @@ export class QuickTestModal {
   /**
    * Check if all tests have been completed
    */
-  _areAllTestsCompleted() {
+  _areAllTestsCompleted(): boolean {
     return TEST_SEQUENCE.every(test => this.state[test] !== null || this.state.skippedTests.includes(test));
   }
 
   /**
    * Check if the given test is the first test in the sequence (excluding skipped tests)
    */
-  _isFirstTest(testType) {
+  _isFirstTest(testType: string): boolean {
     // Get the first non-skipped test
     const firstTest = TEST_SEQUENCE.find(test => !this.state.skippedTests.includes(test));
     return testType === firstTest;
@@ -729,7 +773,7 @@ export class QuickTestModal {
   /**
    * Update test summary display
    */
-  _updateTestSummary() {
+  _updateTestSummary(): void {
     const $summary = $('#test-summary');
 
     let completed = 0;
@@ -763,12 +807,12 @@ export class QuickTestModal {
 }
 
 // Global reference to the current quick test instance
-let currentQuickTestInstance = null;
+let currentQuickTestInstance: QuickTestModal | null = null;
 
 /**
  * Helper function to safely clear the current quick test instance
  */
-function destroyCurrentInstance() {
+function destroyCurrentInstance(): void {
   if (currentQuickTestInstance) {
     console.log("Destroying current quick test instance");
     currentQuickTestInstance.removeEventListeners();
@@ -779,7 +823,7 @@ function destroyCurrentInstance() {
 /**
  * Check if the Quick Test Modal is currently visible
  */
-export function isQuickTestVisible() {
+export function isQuickTestVisible(): boolean {
   const $modal = $('#quickTestModal');
   return $modal.hasClass('show');
 }
@@ -787,7 +831,7 @@ export function isQuickTestVisible() {
 /**
  * Handle controller input for the Quick Test Modal
  */
-export function quicktest_handle_controller_input(changes, batteryStatus, touchPoints) {
+export function quicktest_handle_controller_input(changes: InputChanges, batteryStatus: ControllerBatteryStatus | null, touchPoints: TouchPoint[]): void {
   if (currentQuickTestInstance && isQuickTestVisible()) {
     currentQuickTestInstance.handleControllerInput(changes, batteryStatus, touchPoints);
   }
@@ -796,7 +840,7 @@ export function quicktest_handle_controller_input(changes, batteryStatus, touchP
 /**
  * Show the Quick Test modal (legacy function for backward compatibility)
  */
-export async function show_quick_test_modal(controller) {
+export async function show_quick_test_modal(controller: ControllerManager): Promise<void> {
   // Destroy any existing instance
   destroyCurrentInstance();
 
@@ -805,25 +849,25 @@ export async function show_quick_test_modal(controller) {
   await currentQuickTestInstance.open();
 }
 
-function markTestResult(testType, passed) {
+function markTestResult(testType: string, passed: boolean): void {
   if (currentQuickTestInstance) {
     currentQuickTestInstance.markTestResult(testType, passed);
   }
 }
 
-function resetAllTests() {
+function resetAllTests(): void {
   if (currentQuickTestInstance) {
     currentQuickTestInstance.resetAllTests();
   }
 }
 
-function skipTest(testType) {
+function skipTest(testType: string): void {
   if (currentQuickTestInstance) {
     currentQuickTestInstance.skipTest(testType);
   }
 }
 
-function addTestBack(testType) {
+function addTestBack(testType: string): void {
   if (currentQuickTestInstance) {
     currentQuickTestInstance.addTestBack(testType);
   }
@@ -833,11 +877,21 @@ function addTestBack(testType) {
  * Invoke an action on a test module from an onclick handler in its content,
  * e.g. quickTestAction('imu', 'reset') or quickTestAction('haptic', 'start')
  */
-function quickTestAction(testType, action) {
-  currentQuickTestInstance?.tests[testType]?.[action]?.();
+function quickTestAction(testType: string, action: string): void {
+  const test = currentQuickTestInstance?.tests[testType] as Record<string, (() => unknown) | undefined> | undefined;
+  test?.[action]?.();
 }
 
 // Expose functions to window for the HTML onclick handlers
+declare global {
+  interface Window {
+    markTestResult: typeof markTestResult;
+    resetAllTests: typeof resetAllTests;
+    skipTest: typeof skipTest;
+    addTestBack: typeof addTestBack;
+    quickTestAction: typeof quickTestAction;
+  }
+}
 window.markTestResult = markTestResult;
 window.resetAllTests = resetAllTests;
 window.skipTest = skipTest;

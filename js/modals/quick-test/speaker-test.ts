@@ -1,6 +1,7 @@
 'use strict';
 
 import { l } from '../../translations.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
 
 /**
  * Speaker test: plays a tone through the controller's built-in speaker
@@ -10,11 +11,13 @@ export class SpeakerTest {
   static testName = 'Speaker';
   static icon = 'fas fa-volume-up';
 
-  constructor(host) {
+  host: QuickTestModal;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');
@@ -38,7 +41,7 @@ export class SpeakerTest {
     `;
   }
 
-  async start() {
+  async start(): Promise<void> {
     this.host.startIconAnimation('speaker');
     await this.host.controller.setSpeakerTone(300);
     setTimeout(() => { this.host.stopIconAnimation('speaker'); }, 1000);

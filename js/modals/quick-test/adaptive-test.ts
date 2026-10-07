@@ -1,6 +1,7 @@
 'use strict';
 
 import { l } from '../../translations.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
 
 /**
  * Adaptive trigger test: enables heavy resistance on L2/R2 for the user to feel
@@ -10,12 +11,15 @@ export class AdaptiveTest {
   static testName = 'Adaptive Trigger';
   static icon = 'fas fa-hand-pointer';
 
-  constructor(host) {
+  host: QuickTestModal;
+  active: boolean;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
     this.active = false;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');
@@ -35,13 +39,13 @@ export class AdaptiveTest {
     `;
   }
 
-  async start() {
+  async start(): Promise<void> {
     this.host.startIconAnimation('adaptive');
     this.active = true;
     await this.host.controller.setAdaptiveTriggerPreset({ left: 'heavy', right: 'heavy' });
   }
 
-  async stop() {
+  async stop(): Promise<void> {
     this.host.stopIconAnimation('adaptive');
     // Only touch the hardware if the resistance was actually enabled
     if (!this.active) return;

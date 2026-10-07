@@ -1,6 +1,7 @@
 'use strict';
 
 import { l } from '../../translations.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
 
 /**
  * Lights test: cycles lightbar colors, animates the player indicator
@@ -11,13 +12,17 @@ export class LightsTest {
   static testName = 'Lights';
   static icon = 'fas fa-lightbulb';
 
-  constructor(host) {
+  host: QuickTestModal;
+  animationInterval: ReturnType<typeof setInterval> | null;
+  active: boolean;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
     this.animationInterval = null;
     this.active = false;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');
@@ -37,7 +42,7 @@ export class LightsTest {
     `;
   }
 
-  async start() {
+  async start(): Promise<void> {
     this.host.startIconAnimation('lights');
     this.active = true;
     const { currentController } = this.host.controller;
@@ -96,7 +101,7 @@ export class LightsTest {
     }, 200);
   }
 
-  async stop() {
+  async stop(): Promise<void> {
     this.host.stopIconAnimation('lights');
 
     // Clear the animation interval

@@ -2,6 +2,25 @@
 
 import { l } from '../../translations.js';
 import { setCheckBadge } from './utils.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
+import type { ImuState, InputChanges, Vector3 } from '../../controller-manager.js';
+
+type Axis = 'x' | 'y' | 'z';
+
+interface ImuSample {
+  gyro: Vector3;
+  accel: Vector3;
+  magnitude: number;
+  t: number;
+}
+
+interface ImuStats {
+  gyroPeak: Vector3;
+  accelMin: Vector3;
+  accelMax: Vector3;
+  magnitudeSeen: boolean;
+  autoPassTimer: ReturnType<typeof setTimeout> | null;
+}
 
 // IMU test tuning
 const IMU_HISTORY_MS = 2000;          // wall-clock span of the sparkline charts (time-based:
@@ -15,7 +34,7 @@ const IMU_GYRO_BAR_SCALE_DPS = 360;   // full-deflection scale for the gyro bar 
 const IMU_ACCEL_BAR_SCALE_G = 1.5;    // full-deflection scale for the accel bar meters
 const IMU_TEXT_INTERVAL_MS = 150;     // text readouts update slower than the bars for readability
 const IMU_AUTOPASS_DELAY_MS = 1500;   // linger after all checks turn green before auto-passing
-const IMU_AXES = ['x', 'y', 'z'];
+const IMU_AXES: Axis[] = ['x', 'y', 'z'];
 
 /**
  * IMU test: checks that the gyroscope and accelerometer respond on all
@@ -26,7 +45,18 @@ export class ImuTest {
   static testName = 'IMU (Gyroscope & Accelerometer)';
   static icon = 'fas fa-compass';
 
-  constructor(host) {
+  host: QuickTestModal;
+  monitoring: boolean;
+  dataHistory: ImuSample[];
+  gyroBias: Vector3;
+  biasCaptured: boolean;
+  stillWindow: Vector3[];
+  stats: ImuStats | null;
+  rafId: number | null;
+  lastTextRender: number;
+  autoPassArmed: boolean;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
     this.monitoring = false;
     this.dataHistory = [];
@@ -39,7 +69,7 @@ export class ImuTest {
     this.autoPassArmed = false;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');
@@ -48,8 +78,8 @@ export class ImuTest {
     const imuRestart = l('Restart');
     const imuAtRest = l('at rest');
     const imuValueStyle = 'style="min-width: 7ch; text-align: right;"';
-    const imuAxisColors = { x: '#dc3545', y: '#198754', z: '#0d6efd' };
-    const imuAxisRow = (axis, label, sensor, initial) => `
+    const imuAxisColors: Record<Axis, string> = { x: '#dc3545', y: '#198754', z: '#0d6efd' };
+    const imuAxisRow = (axis: Axis, label: string, sensor: string, initial: string) => `
       <div class="d-flex align-items-center">
         <span style="color: ${imuAxisColors[axis]};">${label}</span>
         <span class="ms-auto" ${imuValueStyle} id="imu-${sensor}-${axis}">${initial}</span>
@@ -58,7 +88,7 @@ export class ImuTest {
       <div class="imu-bar">
         <div class="imu-bar-fill" id="imu-bar-${sensor}-${axis}" style="background: ${imuAxisColors[axis]};"></div>
       </div>`;
-    const imuSummaryRow = (labelHtml, valueId, checkId, initial) => `
+    const imuSummaryRow = (labelHtml: string, valueId: string, checkId: string, initial: string) => `
       <div class="d-flex align-items-center border-top mt-1 pt-1">
         ${labelHtml}
         <span class="ms-auto" ${imuValueStyle} id="${valueId}">${initial}</span>
@@ -112,7 +142,7 @@ export class ImuTest {
     `;
   }
 
-  start() {
+  start(): void {
     this.host.startIconAnimation('imu');
     this.monitoring = true;
     // Don't auto-close when revisiting a test whose checks were already all
@@ -125,7 +155,7 @@ export class ImuTest {
     this._startRenderLoop();
   }
 
-  stop() {
+  stop(): void {
     this.host.stopIconAnimation('imu');
     this.monitoring = false;
     if (this.rafId) {
@@ -139,7 +169,7 @@ export class ImuTest {
    * Restart the IMU test: clear progress, re-capture the gyroscope bias
    * and re-arm the auto-pass
    */
-  reset() {
+  reset(): void {
     this._resetStats();
     this.autoPassArmed = true;
   }
@@ -148,7 +178,7 @@ export class ImuTest {
    * Record one sample while this test is active (rendering happens on
    * animation frames)
    */
-  handleInput(changes) {
+  handleInput(changes: InputChanges): void {
     if (changes.imu) {
       this._recordSample(changes.imu);
     }
@@ -157,7 +187,7 @@ export class ImuTest {
   /**
    * Cancel a pending auto-pass countdown, if any
    */
-  _cancelAutoPass() {
+  _cancelAutoPass(): void {
     if (this.stats?.autoPassTimer) {
       clearTimeout(this.stats.autoPassTimer);
       this.stats.autoPassTimer = null;
@@ -167,7 +197,7 @@ export class ImuTest {
   /**
    * Reset IMU sample history, per-axis activity stats and gyro bias capture
    */
-  _resetStats() {
+  _resetStats(): void {
     this._cancelAutoPass();
     this.dataHistory = [];
     this.stillWindow = [];
@@ -185,7 +215,7 @@ export class ImuTest {
   /**
    * Record one IMU sample: apply gyro bias and track per-axis activity
    */
-  _recordSample(imuData) {
+  _recordSample(imuData: ImuState): void {
     if (!this.monitoring || !this.stats) return;
     const stats = this.stats;
 
@@ -238,7 +268,7 @@ export class ImuTest {
    * Auto-pass the IMU test shortly after every gyro axis has seen a clear
    * rotation and every accel axis has seen the gravity vector swing through it
    */
-  _checkComplete() {
+  _checkComplete(): void {
     const stats = this.stats;
     if (!stats || stats.autoPassTimer || !this.autoPassArmed) return;
     if (!this._areAllChecksGreen(stats)) return;
@@ -251,7 +281,7 @@ export class ImuTest {
   /**
    * True when every gyro axis, every accel axis and the magnitude check passed
    */
-  _areAllChecksGreen(stats) {
+  _areAllChecksGreen(stats: ImuStats): boolean {
     const gyroOk = IMU_AXES.every(axis => stats.gyroPeak[axis] >= IMU_GYRO_PASS_DPS);
     const accelOk = IMU_AXES.every(axis => stats.accelMax[axis] - stats.accelMin[axis] >= IMU_ACCEL_PASS_RANGE_G);
     return gyroOk && accelOk && stats.magnitudeSeen;
@@ -260,7 +290,7 @@ export class ImuTest {
   /**
    * Render the IMU panels on animation frames while the test is active
    */
-  _startRenderLoop() {
+  _startRenderLoop(): void {
     if (this.rafId) return;
     const render = () => {
       if (!this.monitoring) {
@@ -278,7 +308,7 @@ export class ImuTest {
    * Bars, checks and charts render every frame; the text readouts are
    * throttled so the numbers stay readable while the sensors flutter.
    */
-  _renderPanels() {
+  _renderPanels(): void {
     const history = this.dataHistory;
     const stats = this.stats;
     if (!history.length || !stats) return;
@@ -287,7 +317,7 @@ export class ImuTest {
     const now = performance.now();
     if (now - this.lastTextRender >= IMU_TEXT_INTERVAL_MS) {
       this.lastTextRender = now;
-      const fmt = (value, digits) => `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
+      const fmt = (value: number, digits: number) => `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
       IMU_AXES.forEach(axis => {
         $(`#imu-gyro-${axis}`).text(fmt(latest.gyro[axis], 1));
         $(`#imu-accel-${axis}`).text(fmt(latest.accel[axis], 2));
@@ -313,7 +343,7 @@ export class ImuTest {
   /**
    * Deflect one center-zero bar meter, clamped to ±scale
    */
-  _setBar(id, value, scale) {
+  _setBar(id: string, value: number, scale: number): void {
     const bar = document.getElementById(id);
     if (!bar) return;
     const clamped = Math.max(-1, Math.min(1, value / scale));
@@ -325,8 +355,8 @@ export class ImuTest {
   /**
    * Draw a three-axis sparkline chart onto a canvas
    */
-  _drawChart(canvasId, history, field, minScale) {
-    const canvas = document.getElementById(canvasId);
+  _drawChart(canvasId: string, history: ImuSample[], field: 'gyro' | 'accel', minScale: number): void {
+    const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
     if (!canvas) return;
 
     const width = canvas.clientWidth;
@@ -339,7 +369,7 @@ export class ImuTest {
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
     }
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
@@ -363,7 +393,7 @@ export class ImuTest {
     // Map samples to x by timestamp so the chart scrolls at the same speed
     // regardless of the controller's report rate
     const windowStart = performance.now() - IMU_HISTORY_MS;
-    const colors = { x: '#dc3545', y: '#198754', z: '#0d6efd' };
+    const colors: Record<Axis, string> = { x: '#dc3545', y: '#198754', z: '#0d6efd' };
     IMU_AXES.forEach(axis => {
       ctx.strokeStyle = colors[axis];
       ctx.lineWidth = 1.5;

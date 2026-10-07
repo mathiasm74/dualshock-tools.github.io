@@ -2,9 +2,11 @@
 
 import { l } from '../../translations.js';
 import { addIcons } from './utils.js';
+import type { QuickTestModal } from '../quick-test-modal.js';
+import type { InputChanges } from '../../controller-manager.js';
 
 const BUTTONS = ['triangle', 'cross', 'circle', 'square', 'l1', 'r1', 'l2', 'r2', 'l3', 'r3', 'up', 'down', 'left', 'right', 'create', 'touchpad', 'options', 'ps', 'mute'];
-const BUTTON_INFILL_MAPPING = {
+const BUTTON_INFILL_MAPPING: Record<string, string> = {
   'triangle': 'qt-Triangle_infill',
   'cross': 'qt-Cross_infill',
   'circle': 'qt-Circle_infill',
@@ -44,14 +46,19 @@ export class ButtonsTest {
   static icon = 'fas fa-gamepad';
   static capturesInput = true;
 
-  constructor(host) {
+  host: QuickTestModal;
+  pressCount: Record<string, number>;
+  longPressTimers: Record<string, ReturnType<typeof setTimeout>>;
+  svgContainer: HTMLElement | null;
+
+  constructor(host: QuickTestModal) {
     this.host = host;
     this.pressCount = {};
     this.longPressTimers = {};
     this.svgContainer = null;
   }
 
-  content() {
+  content(): string {
     const instructions = l('Instructions');
     const pass = l('Pass');
     const fail = l('Fail');
@@ -88,7 +95,7 @@ export class ButtonsTest {
   /**
    * Load the controller SVG into the accordion body after it is (re)built
    */
-  async init() {
+  async init(): Promise<void> {
     const svgContainer = document.getElementById('quick-test-controller-svg-placeholder');
     if (!svgContainer) {
       console.warn('Quick test SVG container not found - buttons test may be skipped');
@@ -154,7 +161,7 @@ export class ButtonsTest {
     this._resetButtonColors();
   }
 
-  start() {
+  start(): void {
     this.host.startIconAnimation('buttons');
 
     // Initialize button press counts only if not already initialized
@@ -174,7 +181,7 @@ export class ButtonsTest {
     });
   }
 
-  stop() {
+  stop(): void {
     this.host.stopIconAnimation('buttons');
 
     // Clear any active long-press timers
@@ -184,7 +191,7 @@ export class ButtonsTest {
   /**
    * Reset the buttons test to initial state
    */
-  reset() {
+  reset(): void {
     // Reset button press counts
     this.pressCount = {};
     this._getAvailableButtons().forEach(button => {
@@ -208,7 +215,7 @@ export class ButtonsTest {
   /**
    * Track button presses while the test is active
    */
-  handleInput(changes) {
+  handleInput(changes: InputChanges): void {
     this._getAvailableButtons().forEach(button => {
       const handleLongpress = LONG_PRESS_BUTTONS.includes(button);
       if (changes[button] === true) {
@@ -239,7 +246,7 @@ export class ButtonsTest {
    * Get the list of buttons to test based on controller model
    * DS4 controllers don't have a mute button
    */
-  _getAvailableButtons() {
+  _getAvailableButtons(): string[] {
     const model = this.host.controller.getModel();
     if (!model) {
       return BUTTONS;
@@ -254,7 +261,7 @@ export class ButtonsTest {
    * Get element from this test's SVG (scoped to avoid conflicts with the
    * main page's controller drawing)
    */
-  _getSvgElement(id) {
+  _getSvgElement(id: string): Element | null {
     if (!this.svgContainer) {
       return null;
     }
@@ -264,9 +271,9 @@ export class ButtonsTest {
   /**
    * Set color for SVG group elements
    */
-  _setSvgGroupColor(group, color) {
+  _setSvgGroupColor(group: Element | null, color: string): void {
     if (group) {
-      const elements = group.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon');
+      const elements = group.querySelectorAll<SVGElement>('path,rect,circle,ellipse,line,polyline,polygon');
       elements.forEach(el => {
         // Set up a smooth transition for fill and stroke if not already set
         if (!el.style.transition) {
@@ -281,7 +288,7 @@ export class ButtonsTest {
   /**
    * Reset all button colors to the initial (untested) color
    */
-  _resetButtonColors() {
+  _resetButtonColors(): void {
     Object.keys(BUTTON_INFILL_MAPPING).forEach(button => {
       const buttonElement = this._getSvgElement(BUTTON_INFILL_MAPPING[button]);
       this._setSvgGroupColor(buttonElement, 'orange');
@@ -291,7 +298,7 @@ export class ButtonsTest {
   /**
    * Update button color based on press count
    */
-  _updateButtonColor(button) {
+  _updateButtonColor(button: string): void {
     const count = this.pressCount[button] || 0;
     const buttonElement = this._getSvgElement(BUTTON_INFILL_MAPPING[button]);
 
@@ -306,7 +313,7 @@ export class ButtonsTest {
   /**
    * Set button pressed state and update visual appearance
    */
-  _setButtonPressed(button, isPressed) {
+  _setButtonPressed(button: string, isPressed: boolean): void {
     const buttonElement = this._getSvgElement(BUTTON_INFILL_MAPPING[button]);
     if (buttonElement) {
       if (isPressed) {
@@ -322,7 +329,7 @@ export class ButtonsTest {
   /**
    * Check if all buttons have been pressed the required number of times
    */
-  _checkComplete() {
+  _checkComplete(): void {
     const allPressed = this._getAvailableButtons().every(button => {
       const count = this.pressCount[button] || 0;
       // Special buttons only need 1 press
@@ -340,7 +347,7 @@ export class ButtonsTest {
   /**
    * Start long-press timer for a button
    */
-  _startLongPressTimer(button) {
+  _startLongPressTimer(button: string): void {
     if (this.host.isTransitioning()) return;
 
     // Clear any existing timer for this button
@@ -355,7 +362,7 @@ export class ButtonsTest {
   /**
    * Clear long-press timer for a button
    */
-  _clearLongPressTimer(button) {
+  _clearLongPressTimer(button: string): void {
     if (this.longPressTimers[button]) {
       clearTimeout(this.longPressTimers[button]);
       delete this.longPressTimers[button];
@@ -365,7 +372,7 @@ export class ButtonsTest {
   /**
    * Clear all active long-press timers
    */
-  _clearAllLongPressTimers() {
+  _clearAllLongPressTimers(): void {
     Object.keys(this.longPressTimers).forEach(button => {
       this._clearLongPressTimer(button);
     });
@@ -374,7 +381,7 @@ export class ButtonsTest {
   /**
    * Handle long-press action for the face buttons during the button test
    */
-  _handleLongPress(button) {
+  _handleLongPress(button: string): void {
     const activeTest = this.host.getCurrentActiveTest();
     if (activeTest === 'buttons') {
       this.host.setTransitioning();
