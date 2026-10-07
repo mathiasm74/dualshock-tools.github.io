@@ -127,7 +127,6 @@ class BaseController {
   // Optional capabilities; callers check for these before using them
   initializeCurrentOutputState?(): Promise<void>;
   resetSpeakerSettings?(): Promise<void>;
-  disableLeftAdaptiveTrigger?(): Promise<unknown>;
 
   constructor(device: HIDDevice) {
     this.device = device;

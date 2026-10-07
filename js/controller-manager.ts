@@ -459,33 +459,6 @@ class ControllerManager {
   }
 
   /**
-   * Disable left adaptive trigger effects (DS5 only)
-   * @returns Result object with success status and message
-   */
-  async disableLeftAdaptiveTrigger(): Promise<unknown> {
-    if (!this.currentController) {
-      throw new Error(l("No controller connected"));
-    }
-
-    // Check if the controller supports adaptive triggers (DS5 only)
-    if (this.getModel() !== "DS5") {
-      throw new Error(l("Adaptive triggers are only supported on DualSense controllers"));
-    }
-
-    // Check if the controller has the disableLeftAdaptiveTrigger method
-    if (typeof this.currentController.disableLeftAdaptiveTrigger !== 'function') {
-      throw new Error(l("Controller does not support adaptive trigger control"));
-    }
-
-    try {
-      const result = await this.currentController.disableLeftAdaptiveTrigger();
-      return result;
-    } catch (error) {
-      throw new Error(l("Failed to disable adaptive trigger"), { cause: error });
-    }
-  }
-
-  /**
    * Set left adaptive trigger with preset configurations (DS5 only)
    * @param preset - Preset name: 'light', 'medium', 'heavy', 'custom'
    * @param customParams - Custom parameters for 'custom' preset {start, end, force}
