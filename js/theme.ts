@@ -1,18 +1,19 @@
-import { Storage } from './storage.js';
+import { Storage, type Theme } from './storage.js';
 
 
 (function () {
-  let colorMode = document.getElementById('colorModeSwitch');
-  if (!colorMode) {
+  const colorModeSwitch = document.getElementById('colorModeSwitch') as HTMLInputElement | null;
+  if (!colorModeSwitch) {
     return;
   }
+  const colorMode = colorModeSwitch;
 
   /**
    * @function darkmode
    * @summary: changes the theme to 'dark mode' and save settings to local stroage.
    * Basically, replaces/toggles every CSS class that has '-light' class with '-dark'
    */
-  function darkMode() {
+  function darkMode(): void {
     document.documentElement.setAttribute('data-bs-theme', 'dark')
     // set light switch input to true
     if (!colorMode.checked) {
@@ -26,7 +27,7 @@ import { Storage } from './storage.js';
    * @function lightmode
    * @summary: changes the theme to 'light mode' and save settings to local stroage.
    */
-  function lightMode() {
+  function lightMode(): void {
     document.documentElement.setAttribute('data-bs-theme', 'light')
 
     if (colorMode.checked) {
@@ -40,7 +41,7 @@ import { Storage } from './storage.js';
    * @function onToggleMode
    * @summary: the event handler attached to the switch. calling @darkMode or @lightMode depending on the checked state.
    */
-  function onToggleMode() {
+  function onToggleMode(): void {
     if (!colorMode.checked) {
       lightMode();
     } else {
@@ -52,12 +53,12 @@ import { Storage } from './storage.js';
    * @function switchSvgColors
    * @summary: switch the colors of the SVG elements based on the current theme.
    */
-  function switchSvgColors() {
+  function switchSvgColors(): void {
     const defaultColor = Storage.preferredTheme.get() === 'dark' ? '#2b3035' : '#ffffff';
     ['Controller_infills', 'Button_infills', 'L3_infill', 'R3_infill', 'Trackpad_infill', 'L1_infill', 'R1_infill'].forEach(id => {
         const group = document.getElementById(id);
           if (group) {
-            const elements = group.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon');
+            const elements = group.querySelectorAll<SVGElement>('path,rect,circle,ellipse,line,polyline,polygon');
             elements.forEach(el => {
               // Set up a smooth transition for fill and stroke if not already set
               if (!el.style.transition) {
@@ -74,7 +75,7 @@ import { Storage } from './storage.js';
    * @function getSystemDefaultTheme
    * @summary: get system default theme by media query
    */
-  function getSystemDefaultTheme() {
+  function getSystemDefaultTheme(): Theme {
     const darkThemeMq = window.matchMedia('(prefers-color-scheme: dark)');
     if (darkThemeMq.matches) {
       return 'dark';
@@ -82,7 +83,7 @@ import { Storage } from './storage.js';
     return 'light';
   }
 
-  function setup() {
+  function setup(): void {
     var settings = Storage.preferredTheme.get();
     if (settings == null) {
       settings = getSystemDefaultTheme();
