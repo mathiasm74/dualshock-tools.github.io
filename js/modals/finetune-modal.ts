@@ -4,13 +4,50 @@ import { draw_stick_dial } from '../stick-renderer.js';
 import { dec2hex32, float_to_str, la } from '../utils.js';
 import { Storage } from '../storage.js';
 import { auto_calibrate_stick_centers } from './calib-center-modal.js';
-import { calibrate_range } from './calib-range-modal.js';
+import { calibrate_range, type CircularityData } from './calib-range-modal.js';
+import type { ControllerManager, InputChanges, StickPosition, Sticks } from '../controller-manager.js';
+
+type StickSide = 'left' | 'right';
+type FinetuneMode = 'center' | 'circularity';
+type Quadrant = 'left' | 'right' | 'up' | 'down';
+
+interface StickConfig {
+  /** Finetune inputs for the left, top, right and bottom calibration points */
+  suffixes: string[];
+  axisX: string;
+  axisY: string;
+  circDataName: 'll_data' | 'rr_data';
+  canvasName: string;
+}
+
+export interface FinetuneDependencies extends CircularityData {
+  clear_circularity: (leftOrRight?: StickSide | 'both') => void;
+}
+
+export type FinetuneDoneCallback = (success: boolean, message: string | null) => void;
+
+/** Finetune input values (by suffix) and circularity data captured when a slider drag starts */
+interface SliderStartValues {
+  [suffixOrCircDataName: string]: number | number[];
+}
+
+interface BinarySearchState {
+  active: boolean;
+  minValue: number;
+  maxValue: number;
+  lastAdjustedValue: number;
+  inputSuffix: string | null;
+  lastAxisValue: number;
+  targetAxisMin: number;
+  searchIterations: number;
+  maxIterations: number;
+}
 
 const FINETUNE_INPUT_SUFFIXES = ["LL", "LT", "RL", "RT", "LR", "LB", "RR", "RB", "LX", "LY", "RX", "RY"];
-const LEFT_AND_RIGHT = ['left', 'right'];
+const LEFT_AND_RIGHT: StickSide[] = ['left', 'right'];
 
 // Configuration for stick-specific operations
-const STICK_CONFIG = {
+const STICK_CONFIG: Record<StickSide, StickConfig> = {
   left: {
     suffixes: ['LL', 'LT', 'LR', 'LB'],
     axisX: 'LX',
@@ -28,10 +65,10 @@ const STICK_CONFIG = {
 };
 
 // Event listener configurations
-const EVENT_CONFIGS = [
+const EVENT_CONFIGS: { selector: string, event: string, handler: (instance: Finetune, e: JQuery.TriggeredEvent) => unknown }[] = [
   // Mode toggles
-  { selector: '#finetuneModeCenter', event: 'change', handler: (instance, e) => e.target.checked && instance.setMode('center') },
-  { selector: '#finetuneModeCircularity', event: 'change', handler: (instance, e) => e.target.checked && instance.setMode('circularity') },
+  { selector: '#finetuneModeCenter', event: 'change', handler: (instance, e) => (e.target as HTMLInputElement).checked && instance.setMode('center') },
+  { selector: '#finetuneModeCircularity', event: 'change', handler: (instance, e) => (e.target as HTMLInputElement).checked && instance.setMode('circularity') },
 
   // General controls
   { selector: '#showRawNumbersCheckbox', event: 'change', handler: (instance) => instance._showRawNumbersChanged() },
@@ -47,6 +84,33 @@ const EVENT_CONFIGS = [
  * Handles controller stick calibration and fine-tuning operations
  */
 export class Finetune {
+  _mode: FinetuneMode;
+  original_data: number[];
+  active_stick: StickSide | null;
+  _centerStepSize: number;
+  _circularityStepSize: number;
+  isQuickCalibrating: boolean;
+
+  // Dependencies, set in init()
+  controller!: ControllerManager;
+  ll_data!: number[];
+  rr_data!: number[];
+  clearCircularity!: FinetuneDependencies['clear_circularity'];
+  doneCallback: FinetuneDoneCallback | null;
+
+  refresh_finetune_sticks: () => void;
+  update_finetune_warning_messages: () => void;
+  flash_finetune_warning: () => void;
+  continuous_adjustment: {
+    initial_delay: ReturnType<typeof setTimeout> | null;
+    repeat_delay: ReturnType<typeof setInterval> | null;
+  };
+  _previousSliderValues: Record<StickSide, number>;
+  _inputStartValuesForSlider: Record<StickSide, SliderStartValues | null>;
+  _sliderUsed: Record<StickSide, boolean>;
+  _previousAxisValues: Record<StickSide, StickPosition>;
+  binarySearch: BinarySearchState;
+
   constructor() {
     this._mode = 'center'; // 'center' or 'circularity'
     this.original_data = [];
@@ -55,11 +119,6 @@ export class Finetune {
     this._circularityStepSize = 5; // Default step size for circularity mode
     this.isQuickCalibrating = false; // Prevents dialog destruction during quick calibration
 
-    // Dependencies
-    this.controller = null;
-    this.ll_data = null;
-    this.rr_data = null;
-    this.clearCircularity = null;
     this.doneCallback = null;
 
     // Closure functions
@@ -111,11 +170,11 @@ export class Finetune {
     };
   }
 
-  get mode() {
+  get mode(): FinetuneMode {
     return this._mode;
   }
 
-  set mode(mode) {
+  set mode(mode: string) {
     if (mode !== 'center' && mode !== 'circularity') {
       throw new Error(`Invalid finetune mode: ${mode}. Must be 'center' or 'circularity'`);
     }
@@ -123,11 +182,11 @@ export class Finetune {
     this._updateUI();
   }
 
-  get stepSize() {
+  get stepSize(): number {
     return this._mode === 'center' ? this._centerStepSize : this._circularityStepSize;
   }
 
-  set stepSize(size) {
+  set stepSize(size: number) {
     if (this._mode === 'center') {
       this._centerStepSize = size;
     } else {
@@ -137,7 +196,11 @@ export class Finetune {
     this._saveStepSizeToLocalStorage();
   }
 
-  async init(controllerInstance, { ll_data, rr_data, clear_circularity }, doneCallback = null) {
+  async init(
+    controllerInstance: ControllerManager,
+    { ll_data, rr_data, clear_circularity }: FinetuneDependencies,
+    doneCallback: FinetuneDoneCallback | null = null
+  ): Promise<void> {
     la("finetune_modal_open");
 
     this.controller = controllerInstance;
@@ -160,7 +223,7 @@ export class Finetune {
 
       const nv2 = await this.controller.queryNvStatus();
       if(!nv2.locked) {
-        const errTxt = "0x" + dec2hex32(nv2.raw);
+        const errTxt = "0x" + dec2hex32(nv2.raw!);
         throw new Error("ERROR: Cannot lock NVS (" + errTxt + ")");
       }
     } else if(nv.status !== 'locked') {
@@ -169,7 +232,7 @@ export class Finetune {
 
     const data = await this._readFinetuneData();
 
-    const modal = new bootstrap.Modal(document.getElementById('finetuneModal'), {})
+    const modal = new bootstrap.Modal(document.getElementById('finetuneModal')!, {})
     modal.show();
 
     this._initializeFinetuneInputs(data);
@@ -196,7 +259,7 @@ export class Finetune {
   /**
    * Initialize event listeners for the finetune modal
    */
-  _initEventListeners() {
+  _initEventListeners(): void {
     // Initialize finetune input listeners
     FINETUNE_INPUT_SUFFIXES.forEach((suffix) => {
       $("#finetune" + suffix).on('change', () => this._onFinetuneChange());
@@ -214,7 +277,7 @@ export class Finetune {
   /**
    * Initialize stick-specific event listeners (left and right)
    */
-  _initStickEventListeners() {
+  _initStickEventListeners(): void {
     LEFT_AND_RIGHT.forEach(lOrR => {
       $(`#${lOrR}-stick-card`).on('click', () => {
         this.setStickToFinetune(lOrR);
@@ -229,15 +292,15 @@ export class Finetune {
   /**
    * Initialize slider event listeners for a specific stick
    */
-  _initSliderListeners(lOrR) {
+  _initSliderListeners(lOrR: StickSide): void {
     const sliderId = `#${lOrR}CircularitySlider`;
 
     $(sliderId).on('input', (e) => {
-      this._onCircularitySliderChange(lOrR, parseInt(e.target.value));
+      this._onCircularitySliderChange(lOrR, parseInt((e.target as HTMLInputElement).value));
     });
 
     $(sliderId).on('mousedown touchstart', (e) => {
-      this._onCircularitySliderStart(lOrR, parseInt(e.target.value));
+      this._onCircularitySliderStart(lOrR, parseInt((e.target as HTMLInputElement).value));
     });
 
     $(sliderId).on('change', (e) => {
@@ -248,7 +311,7 @@ export class Finetune {
   /**
    * Initialize button event listeners for a specific stick
    */
-  _initButtonListeners(lOrR) {
+  _initButtonListeners(lOrR: StickSide): void {
     // Reset button
     $(`#${lOrR}CircularityResetBtn`).on('click', () => {
       this._resetCircularitySlider(lOrR);
@@ -268,7 +331,7 @@ export class Finetune {
   /**
    * Initialize keyboard event listeners for a specific stick card
    */
-  _initKeyboardListeners(lOrR) {
+  _initKeyboardListeners(lOrR: StickSide): void {
     const stickCard = $(`#${lOrR}-stick-card`);
 
     stickCard.on('keydown', (e) => {
@@ -286,7 +349,7 @@ export class Finetune {
   /**
    * Clean up event listeners for the finetune modal
    */
-  removeEventListeners() {
+  removeEventListeners(): void {
     // Remove finetune input listeners
     FINETUNE_INPUT_SUFFIXES.forEach((suffix) => {
       $("#finetune" + suffix).off('change');
@@ -304,7 +367,7 @@ export class Finetune {
   /**
    * Remove stick-specific event listeners
    */
-  _removeStickEventListeners() {
+  _removeStickEventListeners(): void {
     LEFT_AND_RIGHT.forEach(lOrR => {
       // Remove stick card listeners
       $(`#${lOrR}-stick-card`).off('click keydown keyup');
@@ -323,7 +386,7 @@ export class Finetune {
   /**
    * Handle modal hidden event
    */
-  _onModalHidden() {
+  _onModalHidden(): void {
     console.log("Finetune modal hidden event triggered");
 
     // Don't destroy the instance if quick calibration is in progress
@@ -344,7 +407,7 @@ export class Finetune {
   /**
    * Handle mode switching based on controller input
    */
-  handleModeSwitching(changes) {
+  handleModeSwitching(changes: InputChanges): void {
     if (changes.l1) {
       this.setMode('center');
       this._clearFinetuneAxisHighlights();
@@ -357,7 +420,7 @@ export class Finetune {
   /**
    * Handle stick switching based on controller input
    */
-  handleStickSwitching(changes) {
+  handleStickSwitching(changes: InputChanges): void {
     if (changes.sticks) {
       this._updateActiveStickBasedOnMovement();
     }
@@ -366,7 +429,7 @@ export class Finetune {
   /**
    * Handle D-pad adjustments for finetuning
    */
-  handleDpadAdjustment(changes) {
+  handleDpadAdjustment(changes: InputChanges): void {
     if(!this.active_stick) return;
 
     if (this._mode === 'center') {
@@ -380,11 +443,11 @@ export class Finetune {
    * Handle keyboard events for arrow key adjustments
    * Arrow keys work like D-pad buttons for fine-tuning
    */
-  _onKeyboardEvent(event, isKeyDown) {
+  _onKeyboardEvent(event: { key: string, preventDefault(): void }, isKeyDown: boolean): void {
     const key = event.key;
 
     // Map arrow keys to button names (D-pad)
-    const keyToButtonMap = {
+    const keyToButtonMap: Record<string, string> = {
       'ArrowLeft': 'left',
       'ArrowRight': 'right',
       'ArrowUp': 'up',
@@ -399,7 +462,7 @@ export class Finetune {
     // Arrow keys work as D-pad buttons for adjustments
     if (!this.active_stick) return;
 
-    const changes = {};
+    const changes: InputChanges = {};
 
     if (isKeyDown) {
       // Simulate button press by creating a change object
@@ -413,12 +476,13 @@ export class Finetune {
   }
 
   /* Set the quick calibrating state to prevent dialog destruction
-  * @param {boolean} isCalibrating - Whether quick calibration is in progress
+  * @param isCalibrating - Whether quick calibration is in progress
   */
-  setQuickCalibrating(isCalibrating) {
+  setQuickCalibrating(isCalibrating: boolean): void {
     this.isQuickCalibrating = isCalibrating;
     const finetuneModal = bootstrap.Modal.getInstance('#finetuneModal');
-    finetuneModal.toggle(!isCalibrating);
+    // Hides the modal when calibration starts and shows it again when it ends
+    finetuneModal!.toggle();
 
     if(!isCalibrating) {
       this.clearCircularity();
@@ -435,7 +499,7 @@ export class Finetune {
   /**
    * Save finetune changes
    */
-  save() {
+  save(): void {
     // Unlock save button
     this.controller.setHasChangesToWrite(true);
 
@@ -445,7 +509,7 @@ export class Finetune {
   /**
    * Cancel finetune changes and restore original data
    */
-  async cancel() {
+  async cancel(): Promise<void> {
     if(this.original_data.length == 12)
       await this._writeFinetuneData(this.original_data)
 
@@ -455,7 +519,7 @@ export class Finetune {
   /**
    * Set the finetune mode
    */
-  setMode(mode) {
+  setMode(mode: FinetuneMode): void {
     this._mode = mode;
     this._updateUI();
 
@@ -472,7 +536,7 @@ export class Finetune {
   /**
    * Set which stick to finetune
    */
-  setStickToFinetune(lOrR) {
+  setStickToFinetune(lOrR: StickSide): void {
     if(this.active_stick === lOrR) {
       return;
     }
@@ -499,7 +563,7 @@ export class Finetune {
   /**
    * Restore the show raw numbers checkbox state from storage
    */
-  _restoreShowRawNumbersCheckbox() {
+  _restoreShowRawNumbersCheckbox(): void {
     const isChecked = Storage.showRawNumbersCheckbox.get();
     if (isChecked) {
       $("#showRawNumbersCheckbox").prop('checked', true);
@@ -508,9 +572,9 @@ export class Finetune {
 
   /**
    * Initialize finetune input fields with data and max values
-   * @param {Array} data - Array of finetune values
+   * @param data - Array of finetune values
    */
-  _initializeFinetuneInputs(data) {
+  _initializeFinetuneInputs(data: number[]): void {
     const maxValue = this.controller.getFinetuneMaxValue();
     FINETUNE_INPUT_SUFFIXES.forEach((suffix, i) => {
       $("#finetune" + suffix)
@@ -521,16 +585,16 @@ export class Finetune {
 
   /**
    * Check if stick is in extreme position (close to edges)
-   * @param {Object} stick - Stick object with x and y properties
-   * @returns {boolean} True if stick is in extreme position
+   * @param stick - Stick object with x and y properties
+   * @returns True if stick is in extreme position
    */
-  _isStickInExtremePosition(stick) {
+  _isStickInExtremePosition(stick: StickPosition): boolean {
     const primeAxis = Math.max(Math.abs(stick.x), Math.abs(stick.y));
     const otherAxis = Math.min(Math.abs(stick.x), Math.abs(stick.y));
     return primeAxis >= 0.5 && otherAxis < 0.2;
   }
 
-  _updateUI() {
+  _updateUI(): void {
     // Clear circularity data - we'll call this from core.js
     this.clearCircularity();
 
@@ -550,16 +614,16 @@ export class Finetune {
     this._updateErrorSlackButtonStates();
   }
 
-  async _onFinetuneChange() {
+  async _onFinetuneChange(): Promise<void> {
     const out = FINETUNE_INPUT_SUFFIXES.map((suffix) => {
       const el = $("#finetune" + suffix);
-      const v = parseInt(el.val());
+      const v = parseInt(el.val() as string);
       return isNaN(v) ? 0 : v;
     });
     await this._writeFinetuneData(out);
   }
 
-  async _readFinetuneData() {
+  async _readFinetuneData(): Promise<number[]> {
     const data = await this.controller.getInMemoryModuleData();
     if(!data) {
       throw new Error("ERROR: Cannot read calibration data");
@@ -568,7 +632,7 @@ export class Finetune {
     return data;
   }
 
-  async _writeFinetuneData(data) {
+  async _writeFinetuneData(data: number[]): Promise<void> {
     if (data.length != 12) {
       return;
     }
@@ -578,8 +642,8 @@ export class Finetune {
     }
   }
 
-  _createRefreshSticksThrottled() {
-    let timeout = null;
+  _createRefreshSticksThrottled(): () => void {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
 
     return () => {
       if (timeout) return;
@@ -589,7 +653,7 @@ export class Finetune {
 
         // Update both stick displays using configuration
         Object.entries(STICK_CONFIG).forEach(([stick, config]) => {
-          const stickData = sticks[stick];
+          const stickData = sticks[stick as StickSide];
           this._ds5FinetuneUpdate(config.canvasName, stickData.x, stickData.y);
         });
 
@@ -602,8 +666,8 @@ export class Finetune {
     };
   }
 
-  _createUpdateWarningMessagesClosure() {
-    let timeout = null; // to prevent unnecessary flicker
+  _createUpdateWarningMessagesClosure(): () => void {
+    let timeout: ReturnType<typeof setTimeout> | null = null; // to prevent unnecessary flicker
 
     return () => {
       if(!this.active_stick) return;
@@ -613,7 +677,7 @@ export class Finetune {
         const isNearCenter = Math.abs(currentStick.x) <= 0.5 && Math.abs(currentStick.y) <= 0.5;
         if(!isNearCenter && timeout) return;
 
-        clearTimeout(timeout);
+        clearTimeout(timeout ?? undefined);
         timeout = setTimeout(() => {
           timeout = null;
           if(this._mode !== 'center') return; // in case it changed during timeout
@@ -627,7 +691,7 @@ export class Finetune {
         const isInExtremePosition = this._isStickInExtremePosition(currentStick);
         if(!isInExtremePosition && timeout) return;
 
-        clearTimeout(timeout);
+        clearTimeout(timeout ?? undefined);
         timeout = setTimeout(() => {
           timeout = null;
           if(this._mode !== 'circularity') return; // in case it changed during timeout
@@ -640,7 +704,7 @@ export class Finetune {
     };
   }
 
-  _clearFinetuneAxisHighlights(to_clear = {center: true, circularity: true}) {
+  _clearFinetuneAxisHighlights(to_clear: { center?: boolean, circularity?: boolean } = {center: true, circularity: true}): void {
     const { center, circularity } = to_clear;
 
     if(this._mode === 'center' && center || this._mode === 'circularity' && circularity) {
@@ -652,7 +716,7 @@ export class Finetune {
     }
   }
 
-  _highlightActiveFinetuneAxis(opts = {}) {
+  _highlightActiveFinetuneAxis(opts: { axis?: string } = {}): void {
     if(!this.active_stick) return;
 
     if (this._mode === 'center') {
@@ -685,17 +749,17 @@ export class Finetune {
         }
       }
 
-  _ds5FinetuneUpdate(name, plx, ply) {
+  _ds5FinetuneUpdate(name: string, plx: number, ply: number): void {
     const showRawNumbers = $("#showRawNumbersCheckbox").is(":checked");
     const canvasId = `${name}${showRawNumbers ? '' : '_large'}`;
-    const c = document.getElementById(canvasId);
+    const c = document.getElementById(canvasId) as HTMLCanvasElement | null;
 
     if (!c) {
       console.error(`Canvas element not found: ${canvasId}`);
       return;
     }
 
-    const ctx = c.getContext("2d");
+    const ctx = c.getContext("2d")!;
 
     const margins = 5;
     const radius = c.width / 2 - margins;
@@ -730,13 +794,13 @@ export class Finetune {
   /**
    * Get lOrR from canvas name using configuration
    */
-  _getStickFromCanvasName(canvasName) {
+  _getStickFromCanvasName(canvasName: string): StickSide | undefined {
     return LEFT_AND_RIGHT.find(lOrR =>
       STICK_CONFIG[lOrR].canvasName === canvasName
     );
   }
 
-  _showRawNumbersChanged() {
+  _showRawNumbersChanged(): void {
     const showRawNumbers = $("#showRawNumbersCheckbox").is(":checked");
     const modal = $("#finetuneModal");
     modal.toggleClass("hide-raw-numbers", !showRawNumbers);
@@ -745,7 +809,7 @@ export class Finetune {
     this.refresh_finetune_sticks();
   }
 
-  _close(success = false, message = null) {
+  _close(success = false, message: string | null = null): void {
     console.log("Closing finetune modal");
 
     // Call the done callback if provided
@@ -756,11 +820,11 @@ export class Finetune {
     $("#finetuneModal").modal("hide");
   }
 
-  _isStickAwayFromCenter(stick_pos, deadzone = 0.2) {
+  _isStickAwayFromCenter(stick_pos: StickPosition, deadzone = 0.2): boolean {
     return Math.abs(stick_pos.x) >= deadzone || Math.abs(stick_pos.y) >= deadzone;
   }
 
-  _updateActiveStickBasedOnMovement() {
+  _updateActiveStickBasedOnMovement(): void {
     const sticks = this.controller.button_states.sticks;
     const deadzone = 0.2;
 
@@ -780,7 +844,7 @@ export class Finetune {
     // If both sticks are centered, keep current active stick (no change)
   }
 
-  _clearActiveStick() {
+  _clearActiveStick(): void {
     // Remove active class from both cards
     $("#left-stick-card").removeClass("stick-card-active");
     $("#right-stick-card").removeClass("stick-card-active");
@@ -789,7 +853,7 @@ export class Finetune {
     this._clearFinetuneAxisHighlights();
   }
 
-  _getStickQuadrant(x, y) {
+  _getStickQuadrant(x: number, y: number): Quadrant {
     // Determine which quadrant the stick is in based on x,y coordinates
     // x and y are normalized values between -1 and 1
     if (Math.abs(x) > Math.abs(y)) {
@@ -799,7 +863,7 @@ export class Finetune {
     }
   }
 
-  _getFinetuneInputSuffixForQuadrant(stick, quadrant) {
+  _getFinetuneInputSuffixForQuadrant(stick: StickSide, quadrant: Quadrant): string | null {
     // This function should only be used in circularity mode
     // In center mode, we don't care about quadrants - use direct axis mapping instead
     if (this._mode === 'center') {
@@ -812,7 +876,7 @@ export class Finetune {
     const config = STICK_CONFIG[stick];
     if (!config) return null;
 
-    const quadrantMap = {
+    const quadrantMap: Record<Quadrant, number> = {
       'left': 0,   // LL, RL
       'up': 1,     // LT, RT
       'right': 2,  // LR, RR
@@ -823,7 +887,7 @@ export class Finetune {
     return index !== undefined ? config.suffixes[index] : null;
   }
 
-  _handleCenterModeAdjustment(changes) {
+  _handleCenterModeAdjustment(changes: InputChanges): void {
     const adjustmentStep = this._centerStepSize; // Use center step size for center mode
 
     // Define button mappings for center mode
@@ -845,7 +909,7 @@ export class Finetune {
     for (const mapping of buttonMappings) {
       // Check if active stick is away from center (> 0.5)
       const sticks = this.controller.button_states.sticks;
-      const currentStick = sticks[this.active_stick];
+      const currentStick = sticks[this.active_stick!];
       const stickAwayFromCenter = Math.abs(currentStick.x) > 0.5 || Math.abs(currentStick.y) > 0.5;
       if (stickAwayFromCenter && this._isNavigationKeyPressed()) {
         this.flash_finetune_warning();
@@ -854,19 +918,19 @@ export class Finetune {
 
       if (mapping.buttons.some(button => changes[button])) {
         this._highlightActiveFinetuneAxis({axis: mapping.axis});
-        this._startContinuousDpadAdjustmentCenterMode(this.active_stick, mapping.axis, mapping.adjustment);
+        this._startContinuousDpadAdjustmentCenterMode(this.active_stick!, mapping.axis, mapping.adjustment);
         return;
       }
     }
   }
 
-  _isNavigationKeyPressed() {
+  _isNavigationKeyPressed(): boolean {
     const nav_buttons = ['left', 'right', 'up', 'down', 'square', 'circle', 'triangle', 'cross'];
     return nav_buttons.some(button => this.controller.button_states[button] === true);
   }
 
-  _createFlashWarningClosure() {
-    let timeout = null;
+  _createFlashWarningClosure(): () => void {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
 
     return () => {
       function toggle() {
@@ -884,9 +948,9 @@ export class Finetune {
     };
   }
 
-  _handleCircularityModeAdjustment({sticks: _, ...changes}) {
+  _handleCircularityModeAdjustment({sticks: _, ...changes}: InputChanges): void {
     const sticks = this.controller.button_states.sticks;
-    const currentStick = sticks[this.active_stick];
+    const currentStick = sticks[this.active_stick!];
 
     // Only adjust if stick is moved significantly from center
     const isInExtremePosition = this._isStickInExtremePosition(currentStick);
@@ -911,7 +975,7 @@ export class Finetune {
       }
 
       if (!this.binarySearch.active && !this.binarySearch.inputSuffix && !this._isDpadAdjustmentActive()) {
-        const inputSuffix = this._getFinetuneInputSuffixForQuadrant(this.active_stick, quadrant);
+        const inputSuffix = this._getFinetuneInputSuffixForQuadrant(this.active_stick!, quadrant);
         if (inputSuffix) {
           this._startBinarySearch(inputSuffix);
         }
@@ -927,7 +991,7 @@ export class Finetune {
     const verticalButtons = ['up', 'down', 'triangle', 'cross'];
 
     let adjustment = 0;
-    let relevantButtons = [];
+    let relevantButtons: string[] = [];
 
     if (quadrant === 'left' || quadrant === 'right') {
       // Horizontal quadrants: left increases, right decreases
@@ -955,23 +1019,23 @@ export class Finetune {
 
     // Start continuous adjustment on button press
     if (adjustment !== 0) {
-      this._startContinuousDpadAdjustment(this.active_stick, quadrant, adjustment);
+      this._startContinuousDpadAdjustment(this.active_stick!, quadrant, adjustment);
     }
   }
 
-  _startContinuousDpadAdjustment(stick, quadrant, adjustment) {
+  _startContinuousDpadAdjustment(stick: StickSide, quadrant: Quadrant, adjustment: number): void {
     const inputSuffix = this._getFinetuneInputSuffixForQuadrant(stick, quadrant);
     this._startContinuousAdjustmentWithSuffix(inputSuffix, adjustment);
   }
 
-  _startContinuousDpadAdjustmentCenterMode(stick, targetAxis, adjustment) {
+  _startContinuousDpadAdjustmentCenterMode(stick: StickSide, targetAxis: string, adjustment: number): void {
     // In center mode, directly map to X/Y axes using configuration
     const config = STICK_CONFIG[stick];
     const inputSuffix = targetAxis === 'X' ? config.axisX : config.axisY;
     this._startContinuousAdjustmentWithSuffix(inputSuffix, adjustment);
   }
 
-  _startContinuousAdjustmentWithSuffix(inputSuffix, adjustment) {
+  _startContinuousAdjustmentWithSuffix(inputSuffix: string | null, adjustment: number): void {
     this.stopContinuousDpadAdjustment();
 
     const element = $(`#finetune${inputSuffix}`);
@@ -991,21 +1055,21 @@ export class Finetune {
     }, 400); // Initial delay before continuous adjustment starts (400ms)
   }
 
-  stopContinuousDpadAdjustment() {
-    clearInterval(this.continuous_adjustment.repeat_delay);
+  stopContinuousDpadAdjustment(): void {
+    clearInterval(this.continuous_adjustment.repeat_delay ?? undefined);
     this.continuous_adjustment.repeat_delay = null;
 
-    clearTimeout(this.continuous_adjustment.initial_delay);
+    clearTimeout(this.continuous_adjustment.initial_delay ?? undefined);
     this.continuous_adjustment.initial_delay = null;
 
     this.binarySearch.active = false;
   }
 
-  _isDpadAdjustmentActive() {
+  _isDpadAdjustmentActive(): boolean {
     return !!this.continuous_adjustment.initial_delay;
   }
 
-  _savePreviousStickPosition() {
+  _savePreviousStickPosition(): void {
     if (this.active_stick && this.controller.button_states.sticks) {
       const currentStick = this.controller.button_states.sticks[this.active_stick];
       this._previousAxisValues[this.active_stick].x = currentStick.x;
@@ -1013,11 +1077,11 @@ export class Finetune {
     }
   }
 
-  _startBinarySearch(inputSuffix) {
+  _startBinarySearch(inputSuffix: string): void {
     const element = $(`#finetune${inputSuffix}`);
     if (!element.length) return;
 
-    const currentValue = parseInt(element.val()) || 0;
+    const currentValue = parseInt(element.val() as string) || 0;
 
     this.binarySearch = {
       active: true,
@@ -1035,7 +1099,7 @@ export class Finetune {
     this._performBinarySearchStep();
   }
 
-  async _performBinarySearchStep() {
+  async _performBinarySearchStep(): Promise<void> {
     if (!this.binarySearch.active || !this.binarySearch.inputSuffix) return;
 
     const element = $(`#finetune${this.binarySearch.inputSuffix}`);
@@ -1067,14 +1131,14 @@ export class Finetune {
     );
   }
 
-  _calculateBinarySearchMidpoint() {
+  _calculateBinarySearchMidpoint(): number {
     const { minValue, maxValue, searchIterations, lastAdjustedValue } = this.binarySearch;
     return searchIterations === 0
       ? lastAdjustedValue
       : Math.floor((minValue + maxValue) / 2);
   }
 
-  _calculateBinarySearchAxisValue() {
+  _calculateBinarySearchAxisValue(): number {
     if (!this.binarySearch.inputSuffix || !this.active_stick) {
       return 0;
     }
@@ -1087,7 +1151,7 @@ export class Finetune {
     return Math.abs(axis);
   }
 
-  _isBinarySearchConverged(absAxis) {
+  _isBinarySearchConverged(absAxis: number): boolean {
     const convergenceThreshold = 0.005;
     const diff = Math.abs(absAxis - this.binarySearch.targetAxisMin);
     const hasConverged = diff < convergenceThreshold;
@@ -1095,7 +1159,7 @@ export class Finetune {
     return hasConverged || maxIterationsReached;
   }
 
-  _updateBinarySearchBounds(midValue, absAxis) {
+  _updateBinarySearchBounds(midValue: number, absAxis: number): void {
     if (!this.binarySearch.inputSuffix) return;
 
     const isInvertedDirection = this.binarySearch.inputSuffix.endsWith('R') || this.binarySearch.inputSuffix.endsWith('B');
@@ -1108,11 +1172,11 @@ export class Finetune {
     }
   }
 
-  async _performDpadAdjustment(element, adjustment) {
-    const currentValue = parseInt(element.val()) || 0;
+  async _performDpadAdjustment(element: JQuery, adjustment: number): Promise<void> {
+    const currentValue = parseInt(element.val() as string) || 0;
     const maxValue = this.controller.getFinetuneMaxValue();
 
-    const newValue = Math.max(0, Math.min(maxValue, currentValue + adjustment));
+    const newValue = Math.max(0, Math.min(maxValue!, currentValue + adjustment));
     element.val(newValue);
 
     // Trigger the change event to update the finetune data
@@ -1125,7 +1189,7 @@ export class Finetune {
   /**
    * Check if axis values have dropped from 1.00 to below 1.00 and stop adjustment
    */
-  _checkAxisValuesForStopCondition() {
+  _checkAxisValuesForStopCondition(): void {
     if (!this.active_stick || !this.continuous_adjustment.repeat_delay) {
       return; // No continuous adjustment active
     }
@@ -1150,7 +1214,7 @@ export class Finetune {
   /**
    * Update the step size UI display
    */
-  _updateStepSizeUI() {
+  _updateStepSizeUI(): void {
     const currentStepSize = this._mode === 'center' ? this._centerStepSize : this._circularityStepSize;
     $('#stepSizeValue').text(currentStepSize);
   }
@@ -1158,7 +1222,7 @@ export class Finetune {
   /**
    * Save step size to storage
    */
-  _saveStepSizeToLocalStorage() {
+  _saveStepSizeToLocalStorage(): void {
     Storage.finetuneCenterStepSize.set(this._centerStepSize);
     Storage.finetuneCircularityStepSize.set(this._circularityStepSize);
   }
@@ -1166,7 +1230,7 @@ export class Finetune {
   /**
    * Restore step size from storage
    */
-  _restoreStepSizeFromLocalStorage() {
+  _restoreStepSizeFromLocalStorage(): void {
     const savedCenterStepSize = Storage.finetuneCenterStepSize.get();
     if (savedCenterStepSize) {
       this._centerStepSize = parseInt(savedCenterStepSize);
@@ -1184,16 +1248,16 @@ export class Finetune {
    * Handle the start of circularity slider adjustment
    * Store base values and reset previous slider value
    */
-  _onCircularitySliderStart(lOrR, value) {
+  _onCircularitySliderStart(lOrR: StickSide, value: number): void {
     console.log(`Slider start for ${lOrR} stick, value: ${value}`);
 
     const config = STICK_CONFIG[lOrR];
-    const baseValues = {};
+    const baseValues: SliderStartValues = {};
 
     // Store the base values when slider adjustment starts
     config.suffixes.forEach(suffix => {
       const element = $(`#finetune${suffix}`);
-      baseValues[suffix] = parseInt(element.val()) || 0;
+      baseValues[suffix] = parseInt(element.val() as string) || 0;
     });
 
     this._inputStartValuesForSlider[lOrR] = baseValues;
@@ -1202,7 +1266,7 @@ export class Finetune {
     // Store base values for circularity data arrays
     const circData = this[config.circDataName];
     if (circData && Array.isArray(circData)) {
-      this._inputStartValuesForSlider[lOrR][config.circDataName] = [...circData]; // Create a copy
+      this._inputStartValuesForSlider[lOrR]![config.circDataName] = [...circData]; // Create a copy
     }
 
     console.log(`Base values stored for ${lOrR}:`, baseValues);
@@ -1211,7 +1275,7 @@ export class Finetune {
   /**
    * Handle circularity slider changes with incremental adjustments
    */
-  _onCircularitySliderChange(lOrR, value) {
+  _onCircularitySliderChange(lOrR: StickSide, value: number): void {
     // Debug: Log the data structure
     console.log(`Slider change for ${lOrR} stick, value: ${value}`);
 
@@ -1232,7 +1296,7 @@ export class Finetune {
 
     // Get the start values and suffixes for the current stick
     const config = STICK_CONFIG[lOrR];
-    const startValues = this._inputStartValuesForSlider[lOrR];
+    const startValues = this._inputStartValuesForSlider[lOrR]!;
 
     // Calculate the total adjustment based on slider value from 0
     // Value 0-100 maps to adjustment range (we'll use a reasonable range)
@@ -1241,22 +1305,22 @@ export class Finetune {
 
     config.suffixes.forEach(suffix => {
       const element = $(`#finetune${suffix}`);
-      let newValue;
+      let newValue: number | undefined;
 
       if (suffix.endsWith('L') || suffix.endsWith('T')) {
-        newValue = Math.min(65535, startValues[suffix] + totalAdjustment);
+        newValue = Math.min(65535, (startValues[suffix] as number) + totalAdjustment);
       } else if (suffix.endsWith('R') || suffix.endsWith('B')) {
-        newValue = Math.max(0, startValues[suffix] - totalAdjustment);
+        newValue = Math.max(0, (startValues[suffix] as number) - totalAdjustment);
       }
 
-      element.val(Math.round(newValue));
+      element.val(Math.round(newValue!));
     });
 
     // Update circularity data with incremental changes proportional to slider movement
     const adjustmentConstant = 0.00085; // Small constant for incremental adjustments
     const totalAdjustmentFromBase = totalAdjustment * adjustmentConstant; // Total adjustment from slider position 0
 
-    const startingData = this._inputStartValuesForSlider[lOrR][config.circDataName];
+    const startingData = startValues[config.circDataName] as number[];
     const circData = this[config.circDataName];
 
     // Apply total adjustment from base values to maintain relative differences
@@ -1274,9 +1338,9 @@ export class Finetune {
 
   /**
    * Handle slider release - clear circularity data
-   * @param {string} lOrR - 'left' or 'right'
+   * @param lOrR - 'left' or 'right'
    */
-  _onCircularitySliderRelease(lOrR) {
+  _onCircularitySliderRelease(lOrR: StickSide): void {
     console.log(`Circularity slider released for ${lOrR} stick`);
 
     // Mark that this slider has been used
@@ -1305,9 +1369,9 @@ export class Finetune {
   /**
    * Convert circularity data (polar radii) to cartesian coordinates,
    * trim to a -1,-1 to 1,1 square, then convert back to polar radii
-   * @param {Array} data - Array of radius values representing sectors around a circle
+   * @param data - Array of radius values representing sectors around a circle
    */
-  _trimCircularityDataToSquare(data) {
+  _trimCircularityDataToSquare(data: number[]): void {
     const numSectors = data.length;
     data.forEach((radius, i) => {
       // Calculate angle for this sector
@@ -1329,9 +1393,9 @@ export class Finetune {
 
   /**
    * Reset circularity slider to zero and restore input values to their base state
-   * @param {string} lOrR - 'left' or 'right'
+   * @param lOrR - 'left' or 'right'
    */
-  _resetCircularitySlider(lOrR) {
+  _resetCircularitySlider(lOrR: StickSide): void {
     console.log(`Resetting circularity slider for ${lOrR} stick`);
 
     // If we have starting values stored, use them to reset properly
@@ -1357,10 +1421,10 @@ export class Finetune {
 
   /**
    * Check if data array contains only non-zero values
-   * @param {Array} data - The data array to check
-   * @returns {boolean} True if all values are non-zero, false otherwise
+   * @param data - The data array to check
+   * @returns True if all values are non-zero, false otherwise
    */
-  _hasOnlyNonZeroValues(data) {
+  _hasOnlyNonZeroValues(data: unknown): boolean {
     if (!data || !Array.isArray(data)) {
       return false;
     }
@@ -1370,8 +1434,8 @@ export class Finetune {
   /**
    * Update the state of error slack buttons based on data content
    */
-  _updateErrorSlackButtonStates() {
-    Object.entries(STICK_CONFIG).forEach(([lOrR, config]) => {
+  _updateErrorSlackButtonStates(): void {
+    (Object.entries(STICK_CONFIG) as [StickSide, StickConfig][]).forEach(([lOrR, config]) => {
       if (this._sliderUsed[lOrR]) {
         // Show undo button, hide slack button
         this._showErrorSlackUndoButton(lOrR);
@@ -1391,9 +1455,9 @@ export class Finetune {
 
   /**
    * Handle error slack button click
-   * @param {string} lOrR - 'left' or 'right'
+   * @param lOrR - 'left' or 'right'
    */
-  _onErrorSlackButtonClick(lOrR) {
+  _onErrorSlackButtonClick(lOrR: StickSide): void {
     console.log(`Error slack button clicked for ${lOrR} stick`);
 
     // Only allow toggle in circularity mode
@@ -1410,9 +1474,9 @@ export class Finetune {
 
   /**
    * Handle error slack undo button click
-   * @param {string} lOrR - 'left' or 'right'
+   * @param lOrR - 'left' or 'right'
    */
-  _onErrorSlackUndoButtonClick(lOrR) {
+  _onErrorSlackUndoButtonClick(lOrR: StickSide): void {
     console.log(`Error slack undo button clicked for ${lOrR} stick`);
 
     this._resetCircularitySlider(lOrR);
@@ -1420,10 +1484,10 @@ export class Finetune {
 
   /**
    * Toggle button visibility between slack and undo buttons
-   * @param {string} lOrR - 'left' or 'right'
-   * @param {boolean} showUndo - true to show undo button, false to show slack button
+   * @param lOrR - 'left' or 'right'
+   * @param showUndo - true to show undo button, false to show slack button
    */
-  _toggleErrorSlackButtons(lOrR, showUndo) {
+  _toggleErrorSlackButtons(lOrR: StickSide, showUndo: boolean): void {
     const undoBtn = $(`#${lOrR}ErrorSlackUndoBtn`);
     const slackBtn = $(`#${lOrR}ErrorSlackBtn`);
 
@@ -1433,28 +1497,28 @@ export class Finetune {
 
   /**
    * Show undo button and hide slack button
-   * @param {string} lOrR - 'left' or 'right'
+   * @param lOrR - 'left' or 'right'
    */
-  _showErrorSlackUndoButton(lOrR) {
+  _showErrorSlackUndoButton(lOrR: StickSide): void {
     this._toggleErrorSlackButtons(lOrR, true);
   }
 
   /**
    * Show slack button and hide undo button
-   * @param {string} lOrR - 'left' or 'right'
+   * @param lOrR - 'left' or 'right'
    */
-  _showErrorSlackButton(lOrR) {
+  _showErrorSlackButton(lOrR: StickSide): void {
     this._toggleErrorSlackButtons(lOrR, false);
   }
 }
 
 // Global reference to the current finetune instance
-let currentFinetuneInstance = null;
+let currentFinetuneInstance: Finetune | null = null;
 
 /**
  * Helper function to safely clear the current finetune instance
  */
-function destroyCurrentInstance() {
+function destroyCurrentInstance(): void {
   if (currentFinetuneInstance) {
     currentFinetuneInstance.stopContinuousDpadAdjustment();
     currentFinetuneInstance.removeEventListeners();
@@ -1463,13 +1527,17 @@ function destroyCurrentInstance() {
 }
 
 // Function to create and initialize finetune instance
-export async function ds5_finetune(controller, dependencies, doneCallback = null) {
+export async function ds5_finetune(
+  controller: ControllerManager,
+  dependencies: FinetuneDependencies,
+  doneCallback: FinetuneDoneCallback | null = null
+): Promise<void> {
   // Create new instance
   currentFinetuneInstance = new Finetune();
   await currentFinetuneInstance.init(controller, dependencies, doneCallback);
 }
 
-export function finetune_handle_controller_input(changes) {
+export function finetune_handle_controller_input(changes: InputChanges): void {
   if (currentFinetuneInstance) {
     currentFinetuneInstance.refresh_finetune_sticks();
     currentFinetuneInstance.handleModeSwitching(changes);
@@ -1478,43 +1546,52 @@ export function finetune_handle_controller_input(changes) {
   }
 }
 
-function finetune_save() {
+function finetune_save(): void {
   console.log("Saving finetune changes");
   if (currentFinetuneInstance) {
     currentFinetuneInstance.save();
   }
 }
 
-async function finetune_cancel() {
+async function finetune_cancel(): Promise<void> {
   console.log("Cancelling finetune changes");
   if (currentFinetuneInstance) {
     await currentFinetuneInstance.cancel();
   }
 }
 
-export function isFinetuneVisible() {
+export function isFinetuneVisible(): boolean {
   return !!currentFinetuneInstance;
 }
 
 // Quick calibrate functions
-async function finetune_quick_calibrate_center() {
+async function finetune_quick_calibrate_center(): Promise<void> {
   // Hide the finetune modal
-  currentFinetuneInstance.setQuickCalibrating(true);
+  currentFinetuneInstance!.setQuickCalibrating(true);
 
-  const { controller } = currentFinetuneInstance;
+  const { controller } = currentFinetuneInstance!;
   await auto_calibrate_stick_centers(controller, (success, message) => {
-    currentFinetuneInstance.setQuickCalibrating(false);
+    currentFinetuneInstance!.setQuickCalibrating(false);
   });
 }
 
-async function finetune_quick_calibrate_range() {
+async function finetune_quick_calibrate_range(): Promise<void> {
   // Hide the finetune modal
-  currentFinetuneInstance.setQuickCalibrating(true);
+  currentFinetuneInstance!.setQuickCalibrating(true);
 
-  const { controller, ll_data, rr_data } = currentFinetuneInstance;
+  const { controller, ll_data, rr_data } = currentFinetuneInstance!;
   await calibrate_range(controller, { ll_data, rr_data }, (success, message) => {
-    currentFinetuneInstance.setQuickCalibrating(false);
+    currentFinetuneInstance!.setQuickCalibrating(false);
   });
+}
+
+declare global {
+  interface Window {
+    finetune_cancel: typeof finetune_cancel;
+    finetune_save: typeof finetune_save;
+    finetune_quick_calibrate_center: typeof finetune_quick_calibrate_center;
+    finetune_quick_calibrate_range: typeof finetune_quick_calibrate_range;
+  }
 }
 
 window.finetune_cancel = finetune_cancel;
