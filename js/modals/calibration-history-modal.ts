@@ -3,9 +3,19 @@
 import { FinetuneHistory } from '../finetune-history.js';
 import { formatLocalizedDate, la } from '../utils.js';
 import { l } from '../translations.js';
+import type { ControllerManager } from '../controller-manager.js';
+import type { CalibrationDoneCallback } from './calib-center-modal.js';
 
 export class CalibrationHistoryModal {
-  constructor(controllerInstance = null, doneCallback = null) {
+  modalElement: HTMLElement | null;
+  bootstrapModal: bootstrap.Modal | null;
+  currentFinetuneData: number[] | null;
+  currentControllerSerialNumber: string | null;
+  controller: ControllerManager | null;
+  doneCallback: CalibrationDoneCallback | null;
+  _boundModalHidden: () => void;
+
+  constructor(controllerInstance: ControllerManager | null = null, doneCallback: CalibrationDoneCallback | null = null) {
     this.modalElement = null;
     this.bootstrapModal = null;
     this.currentFinetuneData = null;
@@ -20,7 +30,7 @@ export class CalibrationHistoryModal {
     this._initEventListeners();
   }
 
-  _initEventListeners() {
+  _initEventListeners(): void {
     this.modalElement = document.getElementById('calibrationHistoryModal');
     if (this.modalElement) {
       this.bootstrapModal = new bootstrap.Modal(this.modalElement);
@@ -28,20 +38,20 @@ export class CalibrationHistoryModal {
     }
   }
 
-  removeEventListeners() {
+  removeEventListeners(): void {
     if (this.modalElement) {
       this.modalElement.removeEventListener('hidden.bs.modal', this._boundModalHidden);
     }
   }
 
-  async open(currentFinetuneData = null, controllerSerialNumber = null) {
+  async open(currentFinetuneData: number[] | null = null, controllerSerialNumber: string | null = null): Promise<void> {
     this.currentFinetuneData = currentFinetuneData;
     this.currentControllerSerialNumber = controllerSerialNumber;
     await this._populateHistory();
-    this.bootstrapModal.show();
+    this.bootstrapModal!.show();
   }
 
-  close() {
+  close(): void {
     if (this.bootstrapModal) {
       this.bootstrapModal.hide();
     }
@@ -51,17 +61,17 @@ export class CalibrationHistoryModal {
    * Populate the history list
    * @private
    */
-  async _populateHistory() {
+  async _populateHistory(): Promise<void> {
     const history = FinetuneHistory.getAll(this.currentControllerSerialNumber);
-    const container = document.getElementById('historyListContainer');
+    const container = document.getElementById('historyListContainer')!;
 
     if (!history || history.length === 0) {
       container.innerHTML = `<p class="text-muted ds-i18n">${l('No saved calibrations found.')}</p>`;
-      document.getElementById('clearAllBtn').style.display = 'none';
+      document.getElementById('clearAllBtn')!.style.display = 'none';
       return;
     }
 
-    document.getElementById('clearAllBtn').style.display = 'block';
+    document.getElementById('clearAllBtn')!.style.display = 'block';
 
     let html = '<div class="list-group">';
 
@@ -96,7 +106,7 @@ export class CalibrationHistoryModal {
    * Compare two data arrays for equality
    * @private
    */
-  _dataEquals(data1, data2) {
+  _dataEquals(data1: unknown, data2: unknown): boolean {
     if (!Array.isArray(data1) || !Array.isArray(data2)) {
       return false;
     }
@@ -108,10 +118,10 @@ export class CalibrationHistoryModal {
 
   /**
    * Apply finetune calibration to the controller
-   * @param {Array} finetuneData - The finetune data to apply
+   * @param finetuneData - The finetune data to apply
    * @private
    */
-  async _applyCalibration(finetuneData) {
+  async _applyCalibration(finetuneData: number[]): Promise<void> {
     if (!this.controller || !this.controller.isConnected()) {
       throw new Error('Controller not connected');
     }
@@ -124,23 +134,23 @@ export class CalibrationHistoryModal {
 
   /**
    * Restore a saved calibration
-   * @param {string} entryId - The ID of the entry to revert to
+   * @param entryId - The ID of the entry to revert to
    */
-  async restoreCalibration(entryId) {
+  async restoreCalibration(entryId: string): Promise<void> {
     const entry = FinetuneHistory.getById(entryId, this.currentControllerSerialNumber);
     if (!entry) throw new Error('Calibration settings not found.');
 
     await this._applyCalibration(entry.data);
     this.close();
-    this.doneCallback(true, l('The calibration was restored successfully! Remember to save the changes in order not to loose them when the controller is rebooted.'));
+    this.doneCallback!(true, l('The calibration was restored successfully! Remember to save the changes in order not to loose them when the controller is rebooted.'));
     la("calibration_history_restored");
   }
 
   /**
    * Delete a saved entry
-   * @param {string} entryId - The ID of the entry to delete
+   * @param entryId - The ID of the entry to delete
    */
-  async delete(entryId) {
+  async delete(entryId: string): Promise<void> {
     const entry = FinetuneHistory.getById(entryId, this.currentControllerSerialNumber);
     if (!entry) {
       return;
@@ -155,7 +165,7 @@ export class CalibrationHistoryModal {
   /**
    * Clear all saved entries
    */
-  async clearAll() {
+  async clearAll(): Promise<void> {
     if (confirm(l('Delete all calibration history for this controller? This cannot be undone.'))) {
       FinetuneHistory.clearAll(this.currentControllerSerialNumber);
       await this._populateHistory();
@@ -163,20 +173,34 @@ export class CalibrationHistoryModal {
   }
 }
 
-let currentCalibrationHistoryInstance = null;
+let currentCalibrationHistoryInstance: CalibrationHistoryModal | null = null;
 
-function destroyCurrentInstance() {
+function destroyCurrentInstance(): void {
   if (currentCalibrationHistoryInstance) {
     currentCalibrationHistoryInstance.removeEventListeners();
     currentCalibrationHistoryInstance = null;
   }
 }
 
-export async function show_calibration_history_modal(controllerInstance = null, currentFinetuneData = null, controllerSerialNumber = null, doneCallback = null) {
+export async function show_calibration_history_modal(
+  controllerInstance: ControllerManager | null = null,
+  currentFinetuneData: number[] | null = null,
+  controllerSerialNumber: string | null = null,
+  doneCallback: CalibrationDoneCallback | null = null
+): Promise<void> {
   destroyCurrentInstance();
 
   currentCalibrationHistoryInstance = new CalibrationHistoryModal(controllerInstance, doneCallback);
   await currentCalibrationHistoryInstance.open(currentFinetuneData, controllerSerialNumber);
+}
+
+declare global {
+  interface Window {
+    calibration_history_restore: (entryId: string) => void;
+    calibration_history_delete: (entryId: string) => void;
+    calibration_history_clear_all: () => void;
+    show_calibration_history_modal: typeof show_calibration_history_modal;
+  }
 }
 
 window.calibration_history_restore = (entryId) => {
