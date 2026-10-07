@@ -3,20 +3,34 @@ import { Storage } from './storage.js';
 // Constants
 export const CIRCULARITY_DATA_SIZE = 48; // Number of angular positions to sample
 
+export interface StickDialOptions {
+    /** Array of circularity test data */
+    circularity_data?: number[] | null;
+    /** Whether to apply center zoom transformation */
+    enable_zoom_center?: boolean;
+    /** Whether to highlight the stick position */
+    highlight?: boolean;
+}
+
 /**
  * Draws analog stick position on a canvas with various visualization options.
- * @param {CanvasRenderingContext2D} ctx - Canvas rendering context
- * @param {number} center_x - X coordinate of stick center
- * @param {number} center_y - Y coordinate of stick center
- * @param {number} sz - Size/radius of the stick area
- * @param {number} stick_x - Current stick X position (-1 to 1)
- * @param {number} stick_y - Current stick Y position (-1 to 1)
- * @param {Object} opts - Options object
- * @param {number[]|null} opts.circularity_data - Array of circularity test data
- * @param {boolean} opts.enable_zoom_center - Whether to apply center zoom transformation
- * @param {boolean} opts.highlight - Whether to highlight the stick position
+ * @param ctx - Canvas rendering context
+ * @param center_x - X coordinate of stick center
+ * @param center_y - Y coordinate of stick center
+ * @param sz - Size/radius of the stick area
+ * @param stick_x - Current stick X position (-1 to 1)
+ * @param stick_y - Current stick Y position (-1 to 1)
+ * @param opts - Options object
  */
-export function draw_stick_dial(ctx, center_x, center_y, sz, stick_x, stick_y, opts = {}) {
+export function draw_stick_dial(
+    ctx: CanvasRenderingContext2D,
+    center_x: number,
+    center_y: number,
+    sz: number,
+    stick_x: number,
+    stick_y: number,
+    opts: StickDialOptions = {}
+): void {
     const { circularity_data = null, enable_zoom_center = false, highlight } = opts;
     const colorMode = Storage.preferredTheme.get();
     // Draw base circle
@@ -30,7 +44,7 @@ export function draw_stick_dial(ctx, center_x, center_y, sz, stick_x, stick_y, o
     ctx.stroke();
 
     // Helper function for circularity visualization color
-    function cc_to_color(cc) {
+    function cc_to_color(cc: number): number {
         const dd = Math.sqrt(Math.pow((1.0 - cc), 2));
         let hh;
         if(cc <= 1.0)
@@ -41,7 +55,7 @@ export function draw_stick_dial(ctx, center_x, center_y, sz, stick_x, stick_y, o
     }
 
     // Draw circularity visualization if data provided
-    if (circularity_data?.length > 0) {
+    if (circularity_data && circularity_data.length > 0) {
         const MAX_N = CIRCULARITY_DATA_SIZE;
 
         for(let i = 0; i < MAX_N; i++) {
@@ -65,13 +79,13 @@ export function draw_stick_dial(ctx, center_x, center_y, sz, stick_x, stick_y, o
 
             const cc = (kd + kd1) / 2;
             const hh = cc_to_color(cc);
-            ctx.fillStyle = 'hsla(' + parseInt(hh) + ', 100%, 50%, 0.5)';
+            ctx.fillStyle = 'hsla(' + parseInt(String(hh)) + ', 100%, 50%, 0.5)';
             ctx.fill();
         }
     }
 
     // Draw circularity error text if enough data provided
-    if (circularity_data?.filter(n => n > 0.3).length > 10) {
+    if (circularity_data && circularity_data.filter(n => n > 0.3).length > 10) {
         const circularityError = calculateCircularityError(circularity_data);
 
         ctx.fillStyle = colorMode === 'dark' ? '#2b3035' : '#ffffff';
@@ -165,10 +179,10 @@ export function draw_stick_dial(ctx, center_x, center_y, sz, stick_x, stick_y, o
 
 /**
  * Calculates circularity error for stick movement data.
- * @param {number[]} data - Array of distance values at different angular positions
- * @returns {number} RMS deviation as percentage
+ * @param data - Array of distance values at different angular positions
+ * @returns RMS deviation as percentage
  */
-export function calculateCircularityError(data) {
+export function calculateCircularityError(data: number[]): number {
     // Sum of squared deviations from ideal distance of 1.0, only for values > 0.2
     const sumSquaredDeviations = data.reduce((acc, val) =>
         val > 0.2 ? acc + Math.pow(val - 1, 2) : acc, 0);
@@ -180,11 +194,11 @@ export function calculateCircularityError(data) {
 
 /**
  * Applies center zoom transformation to stick coordinates.
- * @param {number} x - X coordinate
- * @param {number} y - Y coordinate
- * @returns {Object} Transformed coordinates {x, y}
+ * @param x - X coordinate
+ * @param y - Y coordinate
+ * @returns Transformed coordinates {x, y}
  */
-function apply_center_zoom(x, y) {
+function apply_center_zoom(x: number, y: number): { x: number, y: number } {
     // Calculate distance from center
     const distance = Math.sqrt(x * x + y * y);
 

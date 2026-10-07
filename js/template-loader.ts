@@ -1,17 +1,17 @@
 'use strict';
 
 // Cache for loaded templates
-const templateCache = new Map();
+const templateCache = new Map<string, string>();
 
 /**
 * Load a template from the templates directory or bundled assets
-* @param {string} templateName - Name of the template file without extension
-* @returns {Promise<string>} - Promise that resolves with the template HTML
+* @param templateName - Name of the template file without extension
+* @returns Promise that resolves with the template HTML
 */
-async function loadTemplate(templateName) {
+async function loadTemplate(templateName: string): Promise<string> {
   // Check if template is already in cache
   if (templateCache.has(templateName)) {
-    return templateCache.get(templateName);
+    return templateCache.get(templateName)!;
   }
 
   // Check if we have bundled assets (production mode)
@@ -40,10 +40,10 @@ async function loadTemplate(templateName) {
 
 /**
 * Load SVG assets from bundled assets or server
-* @param {string} assetPath - Path to the SVG asset
-* @returns {Promise<string>} - Promise that resolves with the SVG content
+* @param assetPath - Path to the SVG asset
+* @returns Promise that resolves with the SVG content
 */
-async function loadSvgAsset(assetPath) {
+async function loadSvgAsset(assetPath: string): Promise<string> {
   // Check if we have bundled assets (production mode)
   if (window.BUNDLED_ASSETS && window.BUNDLED_ASSETS.svg) {
     const svgContent = window.BUNDLED_ASSETS.svg[assetPath];
@@ -64,7 +64,7 @@ async function loadSvgAsset(assetPath) {
 /**
 * Load all templates and insert them into the DOM
 */
-export async function loadAllTemplates() {
+export async function loadAllTemplates(): Promise<void> {
   // Load SVG icons
   const iconsHtml = await loadSvgAsset('icons.svg');
   const iconsContainer = document.createElement('div');

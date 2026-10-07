@@ -6,7 +6,7 @@
  * Replace [triangle]/[square]/[circle]/[cross] placeholders with inline
  * PlayStation button icons
  */
-export function addIcons(string) {
+export function addIcons(string: string): string {
   return string
     .replace('[triangle]', '<svg width="20" height="20" style="vertical-align: -4px;"><use xlink:href="#ps-triangle"/></svg>')
     .replace('[square]', '<svg width="20" height="20" style="vertical-align: -4px;"><use xlink:href="#ps-square"/></svg>')
@@ -18,7 +18,7 @@ export function addIcons(string) {
  * Toggle one check/pending indicator badge. Only touches the color and the
  * icon, so each test's markup keeps its own layout classes.
  */
-export function setCheckBadge(id, passed) {
+export function setCheckBadge(id: string, passed: boolean): void {
   const check = document.getElementById(id);
   if (!check) return;
   if (check.classList.contains('bg-success') === passed) return;

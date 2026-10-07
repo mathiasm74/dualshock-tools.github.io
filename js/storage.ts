@@ -1,5 +1,7 @@
 'use strict';
 
+import type { FinetuneHistoryEntry } from './finetune-history.js';
+
 export interface LastConnectedInfo {
   deviceName: string;
   timestamp: string;
@@ -10,8 +12,8 @@ export interface LastConnectedInfo {
 
 export type Theme = 'light' | 'dark';
 
-/** Fine-tune history, keyed by controller. Its shape is owned by finetune-history.js. */
-export type FinetuneHistory = Record<string, unknown>;
+/** Fine-tune history entries, newest first, keyed by controller serial number. */
+export type FinetuneHistoryStore = Record<string, FinetuneHistoryEntry[]>;
 
 export const Storage = {
   STORAGE_KEYS: {
@@ -245,10 +247,10 @@ export const Storage = {
 
   finetuneHistory: {
     getAll() {
-      return Storage.getObject<FinetuneHistory>(Storage.STORAGE_KEYS.FINETUNE_HISTORY) || {};
+      return Storage.getObject<FinetuneHistoryStore>(Storage.STORAGE_KEYS.FINETUNE_HISTORY) || {};
     },
 
-    setAll(history: FinetuneHistory): void {
+    setAll(history: FinetuneHistoryStore): void {
       Storage.setObject(Storage.STORAGE_KEYS.FINETUNE_HISTORY, history);
     },
 

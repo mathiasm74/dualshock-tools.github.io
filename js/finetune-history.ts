@@ -1,8 +1,15 @@
 'use strict';
 
-import { Storage } from './storage.js';
+import { Storage, type FinetuneHistoryStore } from './storage.js';
 
 const MAX_HISTORY_ENTRIES_PER_CONTROLLER = 10;
+
+export interface FinetuneHistoryEntry {
+  id: string;
+  timestamp: number;
+  /** The 12 finetune values */
+  data: number[];
+}
 
 /**
  * Manages finetune parameter history for DS5 and Edge controllers
@@ -11,11 +18,11 @@ const MAX_HISTORY_ENTRIES_PER_CONTROLLER = 10;
 export class FinetuneHistory {
   /**
    * Save current finetune settings for a controller
-   * @param {Array} finetuneData - Array of 12 finetune values
-   * @param {string} controllerSerialNumber - Serial number of the controller
-   * @returns {string} The ID of the saved entry
+   * @param finetuneData - Array of 12 finetune values
+   * @param controllerSerialNumber - Serial number of the controller
+   * @returns The ID of the saved entry
    */
-  static save(finetuneData, controllerSerialNumber) {
+  static save(finetuneData: number[], controllerSerialNumber: string): string {
     if (!Array.isArray(finetuneData) || finetuneData.length !== 12) {
       throw new Error(`Finetune data must be an array of 12 values, got "${finetuneData}"`);
     }
@@ -36,7 +43,7 @@ export class FinetuneHistory {
       return controllerHistory[0].id;
     }
 
-    const entry = {
+    const entry: FinetuneHistoryEntry = {
       id: this._generateId(),
       timestamp: Date.now(),
       data: finetuneData
@@ -56,10 +63,10 @@ export class FinetuneHistory {
 
   /**
    * Get all saved finetune settings for a specific controller
-   * @param {string} controllerSerialNumber - Serial number of the controller
-   * @returns {Array} Array of saved settings entries for the controller
+   * @param controllerSerialNumber - Serial number of the controller
+   * @returns Array of saved settings entries for the controller
    */
-  static getAll(controllerSerialNumber) {
+  static getAll(controllerSerialNumber: string | null | undefined): FinetuneHistoryEntry[] {
     if (!controllerSerialNumber || typeof controllerSerialNumber !== 'string') {
       return [];
     }
@@ -70,11 +77,11 @@ export class FinetuneHistory {
 
   /**
    * Get finetune settings by ID
-   * @param {string} id - Entry ID
-   * @param {string} controllerSerialNumber - Serial number of the controller
-   * @returns {Object|null} Entry object or null if not found
+   * @param id - Entry ID
+   * @param controllerSerialNumber - Serial number of the controller
+   * @returns Entry object or null if not found
    */
-  static getById(id, controllerSerialNumber) {
+  static getById(id: string, controllerSerialNumber: string | null | undefined): FinetuneHistoryEntry | null {
     if (!controllerSerialNumber || typeof controllerSerialNumber !== 'string') {
       return null;
     }
@@ -85,11 +92,11 @@ export class FinetuneHistory {
 
   /**
    * Delete a saved entry
-   * @param {string} id - Entry ID
-   * @param {string} controllerSerialNumber - Serial number of the controller
-   * @returns {boolean} True if deleted, false if not found
+   * @param id - Entry ID
+   * @param controllerSerialNumber - Serial number of the controller
+   * @returns True if deleted, false if not found
    */
-  static delete(id, controllerSerialNumber) {
+  static delete(id: string, controllerSerialNumber: string | null | undefined): boolean {
     if (!controllerSerialNumber || typeof controllerSerialNumber !== 'string') {
       return false;
     }
@@ -109,9 +116,9 @@ export class FinetuneHistory {
 
   /**
    * Clear all saved finetune settings for a specific controller
-   * @param {string} controllerSerialNumber - Serial number of the controller
+   * @param controllerSerialNumber - Serial number of the controller
    */
-  static clearAll(controllerSerialNumber) {
+  static clearAll(controllerSerialNumber: string | null | undefined): void {
     if (!controllerSerialNumber || typeof controllerSerialNumber !== 'string') {
       return;
     }
@@ -123,11 +130,11 @@ export class FinetuneHistory {
 
   /**
    * Get finetune data from a specific entry
-   * @param {string} id - Entry ID
-   * @param {string} controllerSerialNumber - Serial number of the controller
-   * @returns {Array|null} Finetune data array or null if not found
+   * @param id - Entry ID
+   * @param controllerSerialNumber - Serial number of the controller
+   * @returns Finetune data array or null if not found
    */
-  static getDataById(id, controllerSerialNumber) {
+  static getDataById(id: string, controllerSerialNumber: string | null | undefined): number[] | null {
     const entry = this.getById(id, controllerSerialNumber);
     return entry ? entry.data : null;
   }
@@ -138,7 +145,7 @@ export class FinetuneHistory {
    * Get all history from storage (for all controllers)
    * @private
    */
-  static _getAllHistory() {
+  static _getAllHistory(): FinetuneHistoryStore {
     try {
       return Storage.finetuneHistory.getAll();
     } catch (e) {
@@ -151,7 +158,7 @@ export class FinetuneHistory {
    * Save all history to storage
    * @private
    */
-  static _saveAllHistory(allHistory) {
+  static _saveAllHistory(allHistory: FinetuneHistoryStore): void {
     try {
       Storage.finetuneHistory.setAll(allHistory);
     } catch (e) {
@@ -163,7 +170,7 @@ export class FinetuneHistory {
    * Generate unique ID
    * @private
    */
-  static _generateId() {
+  static _generateId(): string {
     return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
@@ -171,7 +178,7 @@ export class FinetuneHistory {
    * Compare two data arrays for equality
    * @private
    */
-  static _dataEquals(data1, data2) {
+  static _dataEquals(data1: unknown, data2: unknown): boolean {
     if (!Array.isArray(data1) || !Array.isArray(data2)) {
       return false;
     }

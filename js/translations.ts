@@ -3,8 +3,24 @@
 import { la } from './utils.js';
 import { Storage } from './storage.js';
 
+interface LanguageInfo {
+  name: string;
+  file: string;
+  direction: 'ltr' | 'rtl';
+}
+
+/** The part of core.js's app state that holds translation data. */
+export interface TranslationState {
+  /** Original (English) HTML of each .ds-i18n element, by element id, plus ".title". */
+  lang_orig_text: Record<string, string>;
+  /** English text -> [translated text] for the current language. */
+  lang_cur: Record<string, [string]>;
+  lang_disabled: boolean;
+  lang_cur_direction: string;
+}
+
 // Alphabetical order
-const available_langs = {
+const available_langs: Record<string, LanguageInfo> = {
   "ar_ar": { "name": "العربية", "file": "ar_ar.json", "direction": "rtl"},
   "bg_bg": { "name": "Български", "file": "bg_bg.json", "direction": "ltr"},
   "cz_cz": { "name": "Čeština", "file": "cz_cz.json", "direction": "ltr"},
@@ -31,11 +47,15 @@ const available_langs = {
 };
 
 // Translation state - will be imported from core.js app object
-let translationState = null;
-let welcomeModal = null;
-let handleLanguageChange = null;
+let translationState: TranslationState | null = null;
+let welcomeModal: (() => void) | null = null;
+let handleLanguageChange: ((lang: string) => Promise<void> | void) | null = null;
 
-export function lang_init(appState, handleLanguageChangeCb, welcomeModalCb) {
+export function lang_init(
+  appState: TranslationState,
+  handleLanguageChangeCb: (lang: string) => Promise<void> | void,
+  welcomeModalCb: () => void
+): void {
   translationState = appState;
   handleLanguageChange = handleLanguageChangeCb;
   welcomeModal = welcomeModalCb;
@@ -47,9 +67,9 @@ export function lang_init(appState, handleLanguageChangeCb, welcomeModalCb) {
       item.id = `ds-i18n-${id_iter++}`;
     }
     
-    translationState.lang_orig_text[item.id] = $(item).html();
+    appState.lang_orig_text[item.id] = $(item).html();
   }
-  translationState.lang_orig_text[".title"] = document.title;
+  appState.lang_orig_text[".title"] = document.title;
   
   const force_lang = Storage.getString("force_lang");
   if (force_lang != null) {
@@ -80,7 +100,7 @@ export function lang_init(appState, handleLanguageChangeCb, welcomeModalCb) {
   $("#availLangs").html(olangs);
 }
 
-async function lang_set(lang, skip_modal=false) {
+async function lang_set(lang: string, skip_modal=false): Promise<void> {
   la("lang_set", { l: lang });
   
   lang_reset_page();
@@ -89,7 +109,7 @@ async function lang_set(lang, skip_modal=false) {
     await lang_translate(file, lang, direction);
   }
   
-  await handleLanguageChange(lang);
+  await handleLanguageChange!(lang);
   Storage.setString("force_lang", lang);
   if(!skip_modal && welcomeModal) {
     Storage.setString("welcome_accepted", "0");
@@ -97,7 +117,8 @@ async function lang_set(lang, skip_modal=false) {
   }
 }
 
-function lang_reset_page() {
+function lang_reset_page(): void {
+  const translationState = getState();
   lang_set_direction("ltr", "en_us");
 
   // Reset translation state to disable translations
@@ -114,7 +135,8 @@ function lang_reset_page() {
   document.title = lang_orig_text[".title"];
 }
 
-function lang_set_direction(new_direction, lang_name) {
+function lang_set_direction(new_direction: string, lang_name: string): void {
+  const translationState = getState();
   const lang_prefix = lang_name.split("_")[0]
   $("html").attr("lang", lang_prefix);
 
@@ -132,7 +154,7 @@ function lang_set_direction(new_direction, lang_name) {
   translationState.lang_cur_direction = new_direction;
 }
 
-export function l(text) {
+export function l(text: string): string {
   if(!translationState || translationState.lang_disabled)
     return text;
 
@@ -143,10 +165,11 @@ export function l(text) {
   return text;
 }
 
-function lang_translate(target_file, target_lang, target_direction) {
+function lang_translate(target_file: string, target_lang: string, target_direction: string): Promise<void> {
+  const translationState = getState();
   return new Promise((resolve, reject) => {
     $.getJSON("lang/" + target_file)
-      .done(function(data) {
+      .done(function(data: Record<string, string>) {
         const { lang_orig_text, lang_cur } = translationState;
         lang_set_direction(target_direction, target_lang);
 
@@ -175,9 +198,9 @@ function lang_translate(target_file, target_lang, target_direction) {
         }
 
         const old_title = lang_orig_text[".title"];
-        document.title = lang_cur[old_title];
+        document.title = String(lang_cur[old_title]);
         if(lang_cur[".authorMsg"]) {
-          $("#authorMsg").html(lang_cur[".authorMsg"]);
+          $("#authorMsg").html(lang_cur[".authorMsg"][0]);
         }
         $("#curLang").html(available_langs[target_lang]["name"]);
 
@@ -190,5 +213,15 @@ function lang_translate(target_file, target_lang, target_direction) {
   });
 }
 
+/** The translation state; only valid after lang_init() has been called. */
+function getState(): TranslationState {
+  return translationState!;
+}
+
 // Make lang_set available globally for onclick handlers in HTML
+declare global {
+  interface Window {
+    lang_set: typeof lang_set;
+  }
+}
 window.lang_set = lang_set;
