@@ -1,6 +1,16 @@
 'use strict';
 
-import BaseController from './base-controller.js';
+import BaseController, {
+  type ActionResult,
+  type BatteryStatus,
+  type ControllerInfo,
+  type InfoItem,
+  type InputConfig,
+  type NvStatus,
+  type OpResult,
+  type ProgressCallback,
+} from './base-controller.js';
+import type { DS5OutputState } from './ds5-controller.js';
 import { 
   sleep, 
   buf2hex, 
@@ -13,37 +23,56 @@ import {
 } from '../utils.js';
 import { l } from '../translations.js';
 
-// DS5 Button mapping configuration
-const DS5_BUTTON_MAP = [
-  { name: 'up', byte: 7, mask: 0x0 }, // Dpad handled separately
-  { name: 'right', byte: 7, mask: 0x1 },
-  { name: 'down', byte: 7, mask: 0x2 },
-  { name: 'left', byte: 7, mask: 0x3 },
-  { name: 'square', byte: 7, mask: 0x10, svg: 'Square' },
-  { name: 'cross', byte: 7, mask: 0x20, svg: 'Cross' },
-  { name: 'circle', byte: 7, mask: 0x40, svg: 'Circle' },
-  { name: 'triangle', byte: 7, mask: 0x80, svg: 'Triangle' },
-  { name: 'l1', byte: 8, mask: 0x01, svg: 'L1' },
-  { name: 'l2', byte: 4, mask: 0xff }, // analog handled separately
-  { name: 'r1', byte: 8, mask: 0x02, svg: 'R1' },
-  { name: 'r2', byte: 5, mask: 0xff }, // analog handled separately
-  { name: 'create', byte: 8, mask: 0x10, svg: 'Create' },
-  { name: 'options', byte: 8, mask: 0x20, svg: 'Options' },
-  { name: 'l3', byte: 8, mask: 0x40, svg: 'L3' },
-  { name: 'r3', byte: 8, mask: 0x80, svg: 'R3' },
-  { name: 'ps', byte: 9, mask: 0x01, svg: 'PS' },
-  { name: 'touchpad', byte: 9, mask: 0x02, svg: 'Trackpad' },
-  { name: 'mute', byte: 9, mask: 0x04, svg: 'Mute' },
+// VR2 Sense controller button mapping, one map per hand. Report layout based
+// on https://gist.github.com/Swyter/4a4ea4c35dbedd144d22c10a7906facc shifted
+// down two bytes (that gist documents Bluetooth packets, which carry the 0x31
+// report ID plus one extra byte; USB via WebHID drops both), and verified on
+// hardware: bytes 0-1 stick X/Y, 2 trigger analog, 3 trigger capacitive,
+// 4 grip capacitive, byte 7 = face/grip/trigger buttons, byte 8 = system
+// buttons, byte 9 = capacitive touch bits.
+const VR2_LEFT_BUTTON_MAP: InputConfig['buttonMap'] = [
+  { name: 'square', byte: 7, mask: 0x01, svg: 'Square' },
+  { name: 'triangle', byte: 7, mask: 0x08, svg: 'Triangle' },
+  { name: 'l1', byte: 7, mask: 0x10, svg: 'L1' }, // Grip click
+  { name: 'l2', byte: 7, mask: 0x40, svg: 'L2' }, // Trigger half-pull; analog handled separately
+  { name: 'create', byte: 8, mask: 0x01, svg: 'Create' },
+  { name: 'l3', byte: 8, mask: 0x04, svg: 'L3' },
+  { name: 'touchTriangle', byte: 9, mask: 0x01 }, // Capacitive: finger resting on the button
+  { name: 'touchSquare', byte: 9, mask: 0x02 },
+  { name: 'touchStick', byte: 9, mask: 0x04 }, // Not confirmed on hardware yet
+  { name: 'touchGrip', byte: 9, mask: 0x08 },
+  { name: 'touchTrigger', byte: 8, mask: 0x80 }, // L2 capacitive rest (verified on right hand only)
 ];
 
-// DS5 Input processing configuration
-const DS5_INPUT_CONFIG = {
-  buttonMap: DS5_BUTTON_MAP,
-  dpadByte: 7,
-  l2AnalogByte: 4,
-  r2AnalogByte: 5,
-  imuOffset: 15,
-  touchpadOffset: 32,
+const VR2_RIGHT_BUTTON_MAP: InputConfig['buttonMap'] = [
+  { name: 'cross', byte: 7, mask: 0x02, svg: 'Cross' },
+  { name: 'circle', byte: 7, mask: 0x04, svg: 'Circle' },
+  { name: 'r1', byte: 7, mask: 0x20, svg: 'R1' }, // Grip click
+  { name: 'r2', byte: 7, mask: 0x80, svg: 'R2' }, // Trigger half-pull; analog handled separately
+  { name: 'options', byte: 8, mask: 0x02, svg: 'Options' },
+  { name: 'r3', byte: 8, mask: 0x08, svg: 'R3' },
+  { name: 'ps', byte: 8, mask: 0x10, svg: 'PS' },
+  { name: 'touchCircle', byte: 9, mask: 0x01 }, // Capacitive: finger resting on the button
+  { name: 'touchCross', byte: 9, mask: 0x02 },
+  { name: 'touchStick', byte: 9, mask: 0x04 }, // Not confirmed on hardware yet
+  { name: 'touchGrip', byte: 9, mask: 0x08 },
+  { name: 'touchTrigger', byte: 8, mask: 0x80 }, // R2 capacitive rest
+];
+
+// VR2 input processing configuration. The single stick lives at bytes 0-1,
+// the trigger analog at byte 2. No dpad, no touchpad and no mapped IMU (the
+// VR2 reports accel before gyro, unlike DS4/DS5): those fields are omitted
+// so they are not parsed from bytes that mean something else on this device.
+const VR2_LEFT_INPUT_CONFIG: InputConfig = {
+  buttonMap: VR2_LEFT_BUTTON_MAP,
+  l2AnalogByte: 2,
+  stickBytes: { lx: 0, ly: 1 },
+};
+
+const VR2_RIGHT_INPUT_CONFIG: InputConfig = {
+  buttonMap: VR2_RIGHT_BUTTON_MAP,
+  r2AnalogByte: 2,
+  stickBytes: { lx: 0, ly: 1 },
 };
 
 // DS5 Adaptive Trigger Effect Modes
@@ -88,8 +117,38 @@ const DS5_VALID_FLAG2 = {
 };
 
 // Basic DS5 Output Structure for adaptive trigger control
-class DS5OutputStruct {
-  constructor(currentState = null) {
+class DS5OutputStruct implements DS5OutputState {
+  buffer: ArrayBuffer;
+  view: DataView;
+  validFlag0: number;
+  validFlag1: number;
+  validFlag2: number;
+  bcVibrationRight: number;
+  bcVibrationLeft: number;
+  headphoneVolume: number;
+  speakerVolume: number;
+  micVolume: number;
+  audioControl: number;
+  audioControl2: number;
+  muteLedControl: number;
+  powerSaveMuteControl: number;
+  lightbarSetup: number;
+  ledBrightness: number;
+  playerIndicator: number;
+  ledCRed: number;
+  ledCGreen: number;
+  ledCBlue: number;
+  adaptiveTriggerLeftMode: number;
+  adaptiveTriggerLeftParam0: number;
+  adaptiveTriggerLeftParam1: number;
+  adaptiveTriggerLeftParam2: number;
+  adaptiveTriggerRightMode: number;
+  adaptiveTriggerRightParam0: number;
+  adaptiveTriggerRightParam1: number;
+  adaptiveTriggerRightParam2: number;
+  hapticVolume: number;
+
+  constructor(currentState: Partial<DS5OutputState>) {
     // Create a 47-byte buffer for DS5 output report (USB)
     this.buffer = new ArrayBuffer(47);
     this.view = new DataView(this.buffer);
@@ -136,7 +195,7 @@ class DS5OutputStruct {
   }
 
   // Pack the data into the output buffer
-  pack() {
+  pack(): ArrayBuffer {
     // Based on DS5 output report structure from HID descriptor
     // Byte 0-1: Control flags (16-bit little endian)
     this.view.setUint16(0, (this.validFlag1 << 8) | this.validFlag0, true);
@@ -194,52 +253,17 @@ class DS5OutputStruct {
   }
 }
 
-function ds5_color(serialNumber) {
-  // Color is obtained by the 5th and 6th characters of the serial number
-  // e.g. A12305xxx0000000 -> '05' -> Starlight Blue
-  const colorMap = {
-    '00': 'White',
-    '01': 'Midnight Black',
-    '02': 'Cosmic Red',
-    '03': 'Nova Pink',
-    '04': 'Galactic Purple',
-    '05': 'Starlight Blue',
-    '06': 'Grey Camouflage',
-    '07': 'Volcanic Red',
-    '08': 'Sterling Silver',
-    '09': 'Cobalt Blue',
-    '10': 'Chroma Teal',
-    '11': 'Chroma Indigo',
-    '12': 'Chroma Pearl',
-    '13': 'HyperPop Techno Red',
-    '14': 'HyperPop Remix Green',
-    '15': 'HyperPop Rhythm Blue',
-    '30': '30th Anniversary',
-    'Z1': 'God of War Ragnarok',
-    'Z2': 'Spider-Man 2',
-    'Z3': 'Astro Bot',
-    'Z4': 'Fortnite',
-    'Z6': 'The Last of Us',
-    'ZA': 'God of War 20th Anniversary',
-    'ZB': 'Icon Blue Limited Edition',
-    'ZC': 'Ghost of Yōtei Limited Edition',
-    'ZD': 'Marathon Limited Edition',
-    'ZE': 'Genshin Impact Limited Edition',
-    'ZF': '007 First Light Limited Edition',
-  };
-
-  const colorCode = serialNumber.slice(4, 6);
-  const colorName = colorMap[colorCode] || 'Unknown';
-  return colorName;
-}
-
 /**
-* DualSense (DS5) Controller implementation
+* VR2 Controller implementation
 */
-class DS5Controller extends BaseController {
-  constructor(device) {
+class VR2Controller extends BaseController {
+  isLeft: boolean;
+  currentOutputState: DS5OutputState;
+
+  constructor(device: HIDDevice, isLeft: boolean) {
     super(device);
-    this.model = "DS5";
+    this.model = "VR2";
+    this.isLeft = isLeft;
     this.finetuneMaxValue = 65535; // 16-bit max value for DS5
 
     // Initialize current output state to track controller settings
@@ -274,25 +298,25 @@ class DS5Controller extends BaseController {
     };
   }
 
-  getInputConfig() {
-    return DS5_INPUT_CONFIG;
+  getInputConfig(): InputConfig {
+    return this.isLeft ? VR2_LEFT_INPUT_CONFIG : VR2_RIGHT_INPUT_CONFIG;
   }
 
-  async getSerialNumber() {
+  async getSerialNumber(): Promise<string> {
     return await this.getSystemInfo(1, 19, 17);
   }
 
-  async getInfo() {
+  async getInfo(): Promise<ControllerInfo> {
     return this._getInfo(false);
   }
 
-  async _getInfo(is_edge) {
+  async _getInfo(is_edge: boolean): Promise<ControllerInfo> {
     // Device-only: collect info and return a common structure; do not touch the DOM
     try {
-      console.log("Fetching DS5 info...");
+      console.log("Fetching controller info...");
       const view = await this.receiveFeatureReport(0x20);
-      console.log("Got DS5 info report:", buf2hex(view.buffer));
-      const cmd = view.getUint8(0, true);
+      console.log("Got VR2 info report:", buf2hex(view.buffer));
+      const cmd = view.getUint8(0);
       if(cmd != 0x20 || view.buffer.byteLength != 64)
         return { ok: false, error: new Error("Invalid response for ds5_info") };
 
@@ -305,25 +329,22 @@ class DS5Controller extends BaseController {
       const fwversion  = view.getUint32(28, true);
 
       const updversion = view.getUint16(44, true);
-      const unk        = view.getUint8(46, true);
+      const unk        = view.getUint8(46);
 
       const fwversion1 = view.getUint32(48, true);
       const fwversion2 = view.getUint32(52, true);
       const fwversion3 = view.getUint32(56, true);
 
       const serial_number = await this.getSystemInfo(1, 19, 17);
-      const color = ds5_color(serial_number);
-      const infoItems = [
-        { key: l("Serial Number"), value: serial_number, cat: "hw", copyable: true },
-        { key: l("MCU Unique ID"), value: await this.getSystemInfo(1, 9, 9, false), cat: "hw", isExtra: true, copyable: true },
+      const infoItems: InfoItem[] = [
+        { key: l("Serial Number"), value: serial_number, cat: "hw" },
+        { key: l("MCU Unique ID"), value: await this.getSystemInfo(1, 9, 9, false), cat: "hw", isExtra: true },
         { key: l("PCBA ID"), value: reverse_str(await this.getSystemInfo(1, 17, 14)), cat: "hw", isExtra: true },
-        { key: l("Battery Barcode"), value: await this.getSystemInfo(1, 24, 23), cat: "hw", isExtra: true, copyable: true },
-        { key: l("VCM Left Barcode"), value: await this.getSystemInfo(1, 26, 16), cat: "hw", isExtra: true, copyable: true },
-        { key: l("VCM Right Barcode"), value: await this.getSystemInfo(1, 28, 16), cat: "hw", isExtra: true, copyable: true },
+        { key: l("Battery Barcode"), value: await this.getSystemInfo(1, 24, 23), cat: "hw", isExtra: true },
+        { key: l("VCM Left Barcode"), value: await this.getSystemInfo(1, 26, 16), cat: "hw", isExtra: true },
+        { key: l("VCM Right Barcode"), value: await this.getSystemInfo(1, 28, 16), cat: "hw", isExtra: true },
 
-        { key: l("Color"), value: l(color), cat: "hw", addInfoIcon: 'color', copyable: true },
-
-        ...(is_edge ? [] : [{ key: l("Board Model"), value: this.hwToBoardModel(hwinfo), cat: "hw", addInfoIcon: 'board', copyable: true }]),
+        ...(is_edge ? [] : [{ key: l("Board Model"), value: this.hwToBoardModel(hwinfo), cat: "hw" as const, addInfoIcon: 'board' }]),
 
         { key: l("FW Build Date"), value: build_date + " " + build_time, cat: "fw" },
         { key: l("FW Type"), value: "0x" + dec2hex(fwtype), cat: "fw", isExtra: true },
@@ -336,14 +357,14 @@ class DS5Controller extends BaseController {
         { key: l("Venom FW Version"), value: "0x" + dec2hex32(fwversion2), cat: "fw", isExtra: true },
         { key: l("Spider FW Version"), value: "0x" + dec2hex32(fwversion3), cat: "fw", isExtra: true },
 
-        { key: l("Touchpad ID"), value: await this.getSystemInfo(5, 2, 8, false), cat: "hw", isExtra: true, copyable: true },
+        { key: l("Touchpad ID"), value: await this.getSystemInfo(5, 2, 8, false), cat: "hw", isExtra: true },
         { key: l("Touchpad FW Version"), value: await this.getSystemInfo(5, 4, 8, false), cat: "fw", isExtra: true },
       ];
 
       const old_controller = build_date.search(/ 2020| 2021/);
       let disable_bits = 0;
       if(old_controller != -1) {
-        la("ds5_info_error", {"r": "old"})
+        la("vr2_info_error", {"r": "old"})
         disable_bits |= 2; // 2: outdated firmware
       }
 
@@ -355,13 +376,13 @@ class DS5Controller extends BaseController {
 
       return { ok: true, infoItems, nv, disable_bits, pending_reboot };
     } catch(error) {
-      la("ds5_info_error", {"r": error})
+      la("vr2_info_error", {"r": error})
       return { ok: false, error, disable_bits: 1 };
     }
   }
 
-  async flash(progressCallback = null) {
-    la("ds5_flash");
+  async flash(progressCallback: ProgressCallback | null = null): Promise<ActionResult> {
+    la("vr2_flash");
     try {
       await this.nvsUnlock();
       const lockRes = await this.nvsLock();
@@ -373,16 +394,16 @@ class DS5Controller extends BaseController {
     }
   }
 
-  async reset() {
-    la("ds5_reset");
+  async reset(): Promise<void> {
+    la("vr2_reset");
     try {
       await this.sendFeatureReport(0x80, [1,1]);
     } catch(error) {
     }
   }
 
-  async nvsLock() {
-    // la("ds5_nvlock");
+  async nvsLock(): Promise<OpResult> {
+    // la("vr2_nvlock");
     try {
       await this.sendFeatureReport(0x80, [3,1]);
       await this.receiveFeatureReport(0x81);
@@ -392,8 +413,8 @@ class DS5Controller extends BaseController {
     }
   }
 
-  async nvsUnlock() {
-    // la("ds5_nvunlock");
+  async nvsUnlock(): Promise<void> {
+    // la("vr2_nvunlock");
     try {
       await this.sendFeatureReport(0x80, [3,2, 101, 50, 64, 12]);
       const data = await this.receiveFeatureReport(0x81);
@@ -403,13 +424,13 @@ class DS5Controller extends BaseController {
     }
   }
 
-  async getBdAddr() {
+  async getBdAddr(): Promise<string> {
     await this.sendFeatureReport(0x80, [9,2]);
     const data = await this.receiveFeatureReport(0x81);
     return format_mac_from_view(data, 4);
   }
 
-  async getSystemInfo(base, num, length, decode = true) {
+  async getSystemInfo(base: number, num: number, length: number, decode = true): Promise<string> {
     await this.sendFeatureReport(128, [base,num])
     const pcba_id = await this.receiveFeatureReport(129);
     if(pcba_id.getUint8(1) != base || pcba_id.getUint8(2) != num || pcba_id.getUint8(3) != 2) {
@@ -421,8 +442,8 @@ class DS5Controller extends BaseController {
     return buf2hex(pcba_id.buffer.slice(4, 4+length));
   }
 
-  async calibrateSticksBegin() {
-    la("ds5_calibrate_sticks_begin");
+  async calibrateSticksBegin(): Promise<OpResult> {
+    la("vr2_calibrate_sticks_begin");
     try {
       // Begin
       await this.sendFeatureReport(0x82, [1,1,1]);
@@ -431,18 +452,18 @@ class DS5Controller extends BaseController {
       const data = await this.receiveFeatureReport(0x83);
       if(data.getUint32(0, false) != 0x83010101) {
         const d1 = dec2hex32(data.getUint32(0, false));
-        la("ds5_calibrate_sticks_begin_failed", {"d1": d1});
+        la("vr2_calibrate_sticks_begin_failed", {"d1": d1});
         throw new Error(`Stick center calibration begin failed: ${d1}`);
       }
       return { ok: true };
     } catch(error) {
-      la("ds5_calibrate_sticks_begin_failed", {"r": error});
+      la("vr2_calibrate_sticks_begin_failed", {"r": error});
       return { ok: false, error };
     }
   }
 
-  async calibrateSticksSample() {
-    la("ds5_calibrate_sticks_sample");
+  async calibrateSticksSample(): Promise<OpResult> {
+    la("vr2_calibrate_sticks_sample");
     try {
       // Sample
       await this.sendFeatureReport(0x82, [3,1,1]);
@@ -451,18 +472,18 @@ class DS5Controller extends BaseController {
       const data = await this.receiveFeatureReport(0x83);
       if(data.getUint32(0, false) != 0x83010101) {
         const d1 = dec2hex32(data.getUint32(0, false));
-        la("ds5_calibrate_sticks_sample_failed", {"d1": d1});
+        la("vr2_calibrate_sticks_sample_failed", {"d1": d1});
         throw new Error(`Stick center calibration sample failed: ${d1}`);
       }
       return { ok: true };
     } catch(error) {
-      la("ds5_calibrate_sticks_sample_failed", {"r": error});
+      la("vr2_calibrate_sticks_sample_failed", {"r": error});
       return { ok: false, error };
     }
   }
 
-  async calibrateSticksEnd() {
-    la("ds5_calibrate_sticks_end");
+  async calibrateSticksEnd(): Promise<OpResult> {
+    la("vr2_calibrate_sticks_end");
     try {
       // Write
       await this.sendFeatureReport(0x82, [2,1,1]);
@@ -471,19 +492,19 @@ class DS5Controller extends BaseController {
 
       if(data.getUint32(0, false) != 0x83010102) {
         const d1 = dec2hex32(data.getUint32(0, false));
-        la("ds5_calibrate_sticks_failed", {"s": 3, "d1": d1});
+        la("vr2_calibrate_sticks_failed", {"s": 3, "d1": d1});
         throw new Error(`Stick center calibration end failed: ${d1}`);
       }
 
       return { ok: true };
     } catch(error) {
-      la("ds5_calibrate_sticks_end_failed", {"r": error});
+      la("vr2_calibrate_sticks_end_failed", {"r": error});
       return { ok: false, error };
     }
   }
 
-  async calibrateRangeBegin() {
-    la("ds5_calibrate_range_begin");
+  async calibrateRangeBegin(): Promise<OpResult> {
+    la("vr2_calibrate_range_begin");
     try {
       // Begin
       await this.sendFeatureReport(0x82, [1,1,2]);
@@ -492,18 +513,18 @@ class DS5Controller extends BaseController {
       const data = await this.receiveFeatureReport(0x83);
       if(data.getUint32(0, false) != 0x83010201) {
         const d1 = dec2hex32(data.getUint32(0, false));
-        la("ds5_calibrate_range_begin_failed", {"d1": d1});
+        la("vr2_calibrate_range_begin_failed", {"d1": d1});
         throw new Error(`Stick range calibration begin failed: ${d1}`);
       }
       return { ok: true };
     } catch(error) {
-      la("ds5_calibrate_range_begin_failed", {"r": error});
+      la("vr2_calibrate_range_begin_failed", {"r": error});
       return { ok: false, error };
     }
   }
 
-  async calibrateRangeEnd() {
-    la("ds5_calibrate_range_end");
+  async calibrateRangeEnd(): Promise<OpResult> {
+    la("vr2_calibrate_range_end");
     try {
       // Write
       await this.sendFeatureReport(0x82, [2,1,2]);
@@ -513,18 +534,18 @@ class DS5Controller extends BaseController {
 
       if(data.getUint32(0, false) != 0x83010202) {
         const d1 = dec2hex32(data.getUint32(0, false));
-        la("ds5_calibrate_range_end_failed", {"d1": d1});
+        la("vr2_calibrate_range_end_failed", {"d1": d1});
         throw new Error(`Stick range calibration end failed: ${d1}`);
       }
 
       return { ok: true };
     } catch(error) {
-      la("ds5_calibrate_range_end_failed", {"r": error});
+      la("vr2_calibrate_range_end_failed", {"r": error});
       return { ok: false, error };
     }
   }
 
-  async queryNvStatus() {
+  async queryNvStatus(): Promise<NvStatus> {
     try {
       await this.sendFeatureReport(0x80, [3,3]);
       const data = await this.receiveFeatureReport(0x81);
@@ -547,28 +568,17 @@ class DS5Controller extends BaseController {
     }
   }
 
-  hwToBoardModel(hw_ver) {
-    const a = (hw_ver >> 8) & 0xff;
-    if(a == 0x03) return "BDM-010";
-    if(a == 0x04) return "BDM-020";
-    if(a == 0x05) return "BDM-030";
-    if(a == 0x06) return "BDM-040";
-    if(a == 0x07 || a == 0x08) return "BDM-050";
-    if(a == 0x09) return "BDM-060R";
-    // TODO 0x10?
-    if(a == 0x11) return "BDM-060M";
-    // TODO 0x12?
-    if(a == 0x13) return "BDM-060X";
+  hwToBoardModel(hw_ver: number): string {
     return l("Unknown");
   }
 
-  async getInMemoryModuleData() {
+  async getInMemoryModuleData(): Promise<number[] | null> {
     // DualSense
     await this.sendFeatureReport(0x80, [12, 2]);
     await sleep(100);
     const data = await this.receiveFeatureReport(0x81);
-    const cmd = data.getUint8(0, true);
-    const [p1, p2, p3] = [1, 2, 3].map(i => data.getUint8(i, true));
+    const cmd = data.getUint8(0);
+    const [p1, p2, p3] = [1, 2, 3].map(i => data.getUint8(i));
 
     if(cmd != 129 || p1 != 12 || (p2 != 2 && p2 != 4) || p3 != 2)
       return null;
@@ -576,16 +586,16 @@ class DS5Controller extends BaseController {
     return Array.from({ length: 12 }, (_, i) => data.getUint16(4 + i * 2, true));
   }
 
-  async writeFinetuneData(data) {
-    const pkg = data.reduce((acc, val) => acc.concat([val & 0xff, val >> 8]), [12, 1]);
+  async writeFinetuneData(data: number[]): Promise<void> {
+    const pkg = data.reduce<number[]>((acc, val) => acc.concat([val & 0xff, val >> 8]), [12, 1]);
     await this.sendFeatureReport(0x80, pkg);
   }
 
   /**
    * Send output report to the DS5 controller
-   * @param {ArrayBuffer} data - The output report data
+   * @param data - The output report data
    */
-  async sendOutputReport(data, reason = "") {
+  async sendOutputReport(data: ArrayBuffer, reason = ""): Promise<void> {
     if (!this.device?.opened) {
       throw new Error('Device is not opened');
     }
@@ -593,23 +603,23 @@ class DS5Controller extends BaseController {
       console.log(`Sending output report${ reason ? ` to ${reason}` : '' }:`, DS5_OUTPUT_REPORT.USB_REPORT_ID, buf2hex(data));
       await this.device.sendReport(DS5_OUTPUT_REPORT.USB_REPORT_ID, new Uint8Array(data));
     } catch (error) {
-      throw new Error(`Failed to send output report: ${error.message}`);
+      throw new Error(`Failed to send output report: ${(error as Error).message}`);
     }
   }
 
   /**
    * Update the current output state with values from an OutputStruct
-   * @param {DS5OutputStruct} outputStruct - The output structure to copy state from
+   * @param outputStruct - The output structure to copy state from
    */
-  updateCurrentOutputState(outputStruct) {
+  updateCurrentOutputState(outputStruct: DS5OutputStruct): void {
     this.currentOutputState = { ...outputStruct };
   }
 
   /**
    * Get a copy of the current output state
-   * @returns {Object} A copy of the current output state
+   * @returns A copy of the current output state
    */
-  getCurrentOutputState() {
+  getCurrentOutputState(): DS5OutputState {
     return { ...this.currentOutputState };
   }
 
@@ -618,7 +628,7 @@ class DS5Controller extends BaseController {
    * Since DS5 controllers don't provide a way to read the current output state,
    * this method sets up reasonable defaults and attempts to detect any current settings.
    */
-  async initializeCurrentOutputState() {
+  async initializeCurrentOutputState(): Promise<void> {
     try {
       // Reset all output state to known defaults
       this.currentOutputState = {
@@ -643,225 +653,17 @@ class DS5Controller extends BaseController {
   }
 
   /**
-   * Set left adaptive trigger to single-trigger mode
-   */
-  async setAdaptiveTrigger(left, right) {
-    try {
-      const modeMap = {
-        'off': DS5_TRIGGER_EFFECT_MODE.OFF,
-        'single': DS5_TRIGGER_EFFECT_MODE.TRIGGER,
-        'auto': DS5_TRIGGER_EFFECT_MODE.AUTO_TRIGGER,
-        'resistance': DS5_TRIGGER_EFFECT_MODE.RESISTANCE,
-      }
-
-      // Create output structure with current controller state
-      const { validFlag0 } = this.currentOutputState;
-      const outputStruct = new DS5OutputStruct({
-        ...this.currentOutputState,
-        adaptiveTriggerLeftMode: modeMap[left.mode],
-        adaptiveTriggerLeftParam0: left.start,
-        adaptiveTriggerLeftParam1: left.end,
-        adaptiveTriggerLeftParam2: left.force,
-
-        adaptiveTriggerRightMode: modeMap[right.mode],
-        adaptiveTriggerRightParam0: right.start,
-        adaptiveTriggerRightParam1: right.end,
-        adaptiveTriggerRightParam2: right.force,
-
-        validFlag0: validFlag0 | DS5_VALID_FLAG0.LEFT_TRIGGER | DS5_VALID_FLAG0.RIGHT_TRIGGER,
-      });
-      await this.sendOutputReport(outputStruct.pack(), 'set adaptive trigger mode');
-      outputStruct.validFlag0 &= ~(DS5_VALID_FLAG0.LEFT_TRIGGER | DS5_VALID_FLAG0.RIGHT_TRIGGER);
-
-      // Update current state to reflect the changes
-      this.updateCurrentOutputState(outputStruct);
-
-      return { success: true };
-    } catch (error) {
-      throw new Error("Failed to set left adaptive trigger mode", { cause: error });
-    }
-  }
-
-  /**
-   * Set vibration motors for haptic feedback
-   * @param {number} heavyLeft - Left motor intensity (0-255)
-   * @param {number} lightRight - Right motor intensity (0-255)
-   */
-  async setVibration(heavyLeft = 0, lightRight = 0) {
-    try {
-      const { validFlag0 } = this.currentOutputState;
-      const outputStruct = new DS5OutputStruct({
-        ...this.currentOutputState,
-        bcVibrationLeft: Math.max(0, Math.min(255, heavyLeft)),
-        bcVibrationRight: Math.max(0, Math.min(255, lightRight)),
-        validFlag0: validFlag0 | DS5_VALID_FLAG0.LEFT_VIBRATION | DS5_VALID_FLAG0.RIGHT_VIBRATION, // Update both vibration motors
-      });
-      await this.sendOutputReport(outputStruct.pack(), 'set vibration');
-      outputStruct.validFlag0 &= ~(DS5_VALID_FLAG0.LEFT_VIBRATION | DS5_VALID_FLAG0.RIGHT_VIBRATION);
-
-      // Update current state to reflect the changes
-      this.updateCurrentOutputState(outputStruct);
-    } catch (error) {
-      throw new Error("Failed to set vibration", { cause: error });
-    }
-  }
-
-  /**
-   * Test speaker tone by controlling speaker volume and audio settings
-   * This creates a brief audio feedback through the controller's speaker or headphones
-   * @param {string} output - Audio output destination: "speaker" (default) or "headphones"
-   */
-  async setSpeakerTone(output = "speaker") {
-    try {
-      const { validFlag0 } = this.currentOutputState;
-      const outputStruct = new DS5OutputStruct({
-        ...this.currentOutputState,
-        speakerVolume: 85,
-        headphoneVolume: 55,
-        validFlag0: validFlag0 | DS5_VALID_FLAG0.HEADPHONE_VOLUME | DS5_VALID_FLAG0.SPEAKER_VOLUME | DS5_VALID_FLAG0.AUDIO_CONTROL,
-      });
-      await this.sendOutputReport(outputStruct.pack(), output === "headphones" ? 'play headphone tone' : 'play speaker tone');
-      outputStruct.validFlag0 &= ~(DS5_VALID_FLAG0.HEADPHONE_VOLUME | DS5_VALID_FLAG0.SPEAKER_VOLUME | DS5_VALID_FLAG0.AUDIO_CONTROL);
-
-      // Send feature reports to enable audio
-      if (output === "headphones") {
-        // Audio configuration command for headphones
-        await this.sendFeatureReport(128, [6, 4, 0, 0, 0, 0, 4, 0, 6]);
-        // Enable headphone tone
-        await this.sendFeatureReport(128, [6, 2, 1, 1, 0]);
-      } else {
-        // Audio configuration command for speakers
-        await this.sendFeatureReport(128, [6, 4, 0, 0, 8]);
-        // Enable speaker tone
-        await this.sendFeatureReport(128, [6, 2, 1, 1, 0]);
-      }
-
-      // Update current state to reflect the changes
-      this.updateCurrentOutputState(outputStruct);
-    } catch (error) {
-      throw new Error("Failed to set speaker tone", { cause: error });
-    }
-  }
-
-  /**
-   * Reset speaker settings to default (turn off speaker)
-   */
-  async resetSpeakerSettings() {
-    try {
-      // Disable speaker tone first via feature report
-      await this.sendFeatureReport(128, [6, 2, 0, 1, 0]);
-
-      const { validFlag0 } = this.currentOutputState;
-      const outputStruct = new DS5OutputStruct({
-        ...this.currentOutputState,
-        speakerVolume: 0,
-        validFlag0: validFlag0 | DS5_VALID_FLAG0.SPEAKER_VOLUME | DS5_VALID_FLAG0.AUDIO_CONTROL,
-      });
-      // outputStruct.audioControl = 0x00;
-      await this.sendOutputReport(outputStruct.pack(), 'stop speaker tone');
-      outputStruct.validFlag0 &= ~(DS5_VALID_FLAG0.SPEAKER_VOLUME | DS5_VALID_FLAG0.AUDIO_CONTROL);
-
-      // Update current state to reflect the changes
-      this.updateCurrentOutputState(outputStruct);
-    } catch (error) {
-      throw new Error("Failed to reset speaker settings", { cause: error });
-    }
-  }
-
-  /**
-   * Set lightbar color
-   * @param {number} red - Red component (0-255)
-   * @param {number} green - Green component (0-255)
-   * @param {number} blue - Blue component (0-255)
-   */
-  async setLightbarColor(red = 0, green = 0, blue = 0) {
-    try {
-      const { validFlag1 } = this.currentOutputState;
-      const outputStruct = new DS5OutputStruct({
-        ...this.currentOutputState,
-        ledCRed: Math.max(0, Math.min(255, red)),
-        ledCGreen: Math.max(0, Math.min(255, green)),
-        ledCBlue: Math.max(0, Math.min(255, blue)),
-        validFlag1: validFlag1 | DS5_VALID_FLAG1.LIGHTBAR_COLOR,
-      });
-      await this.sendOutputReport(outputStruct.pack(), 'set lightbar color');
-      outputStruct.validFlag1 &= ~DS5_VALID_FLAG1.LIGHTBAR_COLOR;
-
-      // Update current state to reflect the changes
-      this.updateCurrentOutputState(outputStruct);
-    } catch (error) {
-      throw new Error("Failed to set lightbar color", { cause: error });
-    }
-  }
-
-  /**
-   * Set player indicator lights
-   * @param {number} pattern - Player indicator pattern (0-31, each bit represents a light)
-   */
-  async setPlayerIndicator(pattern = 0) {
-    try {
-      const { validFlag1 } = this.currentOutputState;
-      const outputStruct = new DS5OutputStruct({
-        ...this.currentOutputState,
-        playerIndicator: Math.max(0, Math.min(31, pattern)),
-        validFlag1: validFlag1 | DS5_VALID_FLAG1.PLAYER_INDICATOR,
-      });
-      await this.sendOutputReport(outputStruct.pack(), 'set player indicator');
-      outputStruct.validFlag1 &= ~DS5_VALID_FLAG1.PLAYER_INDICATOR;
-
-      // Update current state to reflect the changes
-      this.updateCurrentOutputState(outputStruct);
-    } catch (error) {
-      throw new Error("Failed to set player indicator", { cause: error });
-    }
-  }
-
-  /**
-   * Reset lights to default state (turn off)
-   */
-  async resetLights() {
-    try {
-      await this.setLightbarColor(0, 0, 0);
-      await this.setPlayerIndicator(0);
-      await this.setMuteLed(0);
-    } catch (error) {
-      throw new Error("Failed to reset lights", { cause: error });
-    }
-  }
-
-  /**
-   * Set mute button LED state
-   * @param {number} state - Mute LED state (0 = off, 1 = solid, 2 = pulsing)
-   */
-  async setMuteLed(state = 0) {
-    try {
-      const { validFlag1 } = this.currentOutputState;
-      const outputStruct = new DS5OutputStruct({
-        ...this.currentOutputState,
-        muteLedControl: Math.max(0, Math.min(2, state)),
-        validFlag1: validFlag1 | DS5_VALID_FLAG1.MUTE_LED,
-      });
-      await this.sendOutputReport(outputStruct.pack(), 'set mute LED');
-      outputStruct.validFlag1 &= ~DS5_VALID_FLAG1.MUTE_LED;
-
-      // Update current state to reflect the changes
-      this.updateCurrentOutputState(outputStruct);
-    } catch (error) {
-      throw new Error("Failed to set mute LED", { cause: error });
-    }
-  }
-
-  getNumberOfSticks() {
-    return 2;
-  }
-
-  /**
   * Parse DS5 battery status from input data
   */
-  parseBatteryStatus(data) {
-    const bat = data.getUint8(52); // DS5 battery byte is at position 52
+  parseBatteryStatus(data: DataView): BatteryStatus {
+    // Provisional: byte 52 (the DS5 position) is always 0x00 on VR2. Byte 41
+    // is the best candidate found on real hardware: it read 0x2a (fully
+    // charged, DS5-style decoding) on a USB-connected controller, and bytes
+    // 39/42 are the fallback candidates if this proves wrong. To verify:
+    // connect with a partially drained controller and check the percentage.
+    const bat = data.getUint8(41);
 
-    // DS5: bat_charge = low 4 bits, bat_status = high 4 bits
+    // bat_charge = low 4 bits, bat_status = high 4 bits
     const bat_charge = bat & 0x0f;
     const bat_status = bat >> 4;
 
@@ -892,7 +694,6 @@ class DS5Controller extends BaseController {
         is_charging = true;
         cable_connected = true;
         break;
-      case 11: // not sure yet what this error means
       default:
         // Error state
         is_error = true;
@@ -901,6 +702,14 @@ class DS5Controller extends BaseController {
 
     return { charge_level, cable_connected, is_charging, is_error };
   }
+
+  getNumberOfSticks(): number {
+    return 1;
+  }
+
+  getSupportedQuickTests(): string[] {
+    return [];
+  }
 }
 
-export default DS5Controller;
+export default VR2Controller;

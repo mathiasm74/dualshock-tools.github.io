@@ -1,6 +1,7 @@
 'use strict';
 
 import DS5Controller from './ds5-controller.js';
+import type { ActionResult, ControllerInfo, InputConfig, OpResult, ProgressCallback } from './base-controller.js';
 import { sleep, dec2hex32, la, lf } from '../utils.js';
 import { l } from "../translations.js";
 
@@ -8,13 +9,13 @@ import { l } from "../translations.js";
 * DualSense Edge (DS5 Edge) Controller implementation
 */
 class DS5EdgeController extends DS5Controller {
-  constructor(device) {
+  constructor(device: HIDDevice) {
     super(device);
     this.model = "DS5_Edge";
     this.finetuneMaxValue = 4095; // 12-bit max value for DS5 Edge
   }
 
-  getInputConfig() {
+  getInputConfig(): InputConfig {
     const ds5Map = super.getInputConfig();
 
     // DS5 Edge has extra buttons
@@ -30,7 +31,7 @@ class DS5EdgeController extends DS5Controller {
     }
   }
 
-  async getInfo() {
+  async getInfo(): Promise<ControllerInfo> {
     // DS5 Edge uses the same info structure as DS5 but with is_edge=true
     const result = await this._getInfo(true);
 
@@ -49,7 +50,7 @@ class DS5EdgeController extends DS5Controller {
     return result;
   }
 
-  parseDeviceSpecificInputs(data) {
+  parseDeviceSpecificInputs(data: DataView): Record<string, number> {
     const triggerLevel = data.getUint8(49);
     return {
       l2_stop_slider: (triggerLevel >> 4) & 3,  // bits 4-5
@@ -57,10 +58,11 @@ class DS5EdgeController extends DS5Controller {
     };
   }
 
-  async flash(progressCallback = null) {
+  async flash(progressCallback: ProgressCallback | null = null): Promise<ActionResult | undefined> {
     la("ds5_edge_flash");
     try {
-      const ret = await this.flashModules(progressCallback);
+      // core.js always passes a progress callback when flashing an Edge
+      const ret = await this.flashModules(progressCallback!);
       if(ret) {
         return { 
           success: true, 
@@ -73,7 +75,7 @@ class DS5EdgeController extends DS5Controller {
     }
   }
 
-  async getBarcode() {
+  async getBarcode(): Promise<string[]> {
     try {
       const td = new TextDecoder();
   
@@ -95,7 +97,7 @@ class DS5EdgeController extends DS5Controller {
     }
   }
 
-  async unlockModule(i) {
+  async unlockModule(i: number): Promise<void> {
     const m_name = i == 0 ? "left module" : "right module";
 
     await this.sendFeatureReport(0x80, [21, 6, i, 11]);
@@ -106,7 +108,7 @@ class DS5EdgeController extends DS5Controller {
     }
   }
 
-  async lockModule(i) {
+  async lockModule(i: number): Promise<void> {
     const m_name = i == 0 ? "left module" : "right module";
 
     await this.sendFeatureReport(0x80, [21, 4, i, 8]);
@@ -117,7 +119,7 @@ class DS5EdgeController extends DS5Controller {
     }
   }
 
-  async storeDataInto(i) {
+  async storeDataInto(i: number): Promise<void> {
     const m_name = i == 0 ? "left module" : "right module";
 
     await this.sendFeatureReport(0x80, [21, 5, i]);
@@ -128,7 +130,7 @@ class DS5EdgeController extends DS5Controller {
     }
   }
 
-  async flashModules(progressCallback) {
+  async flashModules(progressCallback: ProgressCallback): Promise<boolean> {
     la("ds5_edge_flash_modules");
     try {
       progressCallback(0);
@@ -152,7 +154,8 @@ class DS5EdgeController extends DS5Controller {
       const data = await this.getInMemoryModuleData();
       await sleep(50);
       progressCallback(60);
-      await this.writeFinetuneData(data);
+      // A null result (unexpected response) makes this throw, which fails the flash
+      await this.writeFinetuneData(data!);
 
       // Extra delay
       await sleep(100);
@@ -177,7 +180,7 @@ class DS5EdgeController extends DS5Controller {
     }
   }
 
-  async waitUntilWritten(expected) {
+  async waitUntilWritten(expected: number[]): Promise<boolean> {
     let attempts = 0;
     const maxAttempts = 10;
 
@@ -186,7 +189,7 @@ class DS5EdgeController extends DS5Controller {
 
       // Check if all expected bytes match
       const allMatch = expected.every((expectedByte, i) => 
-        data.getUint8(1 + i, true) === expectedByte
+        data.getUint8(1 + i) === expectedByte
       );
 
       if (allMatch) {
@@ -200,7 +203,7 @@ class DS5EdgeController extends DS5Controller {
     return false;
   }
 
-  async calibrateSticksEnd() {
+  async calibrateSticksEnd(): Promise<OpResult> {
     la("ds5_calibrate_sticks_end");
     try {
       // Write
@@ -229,7 +232,7 @@ class DS5EdgeController extends DS5Controller {
     }
   }
 
-  async calibrateRangeEnd() {
+  async calibrateRangeEnd(): Promise<OpResult> {
     la("ds5_calibrate_range_end");
     try {
       // Write
@@ -259,13 +262,13 @@ class DS5EdgeController extends DS5Controller {
     }
   }
 
-  async getInMemoryModuleData() {
+  async getInMemoryModuleData(): Promise<number[] | null> {
     // DualSense Edge
     await this.sendFeatureReport(0x80, [12, 4]);
     await sleep(100);
     const data = await this.receiveFeatureReport(0x81);
-    const cmd = data.getUint8(0, true);
-    const [p1, p2, p3] = [1, 2, 3].map(i => data.getUint8(i, true));
+    const cmd = data.getUint8(0);
+    const [p1, p2, p3] = [1, 2, 3].map(i => data.getUint8(i));
 
     if(cmd != 129 || p1 != 12 || (p2 != 2 && p2 != 4) || p3 != 2)
       return null;
@@ -273,12 +276,12 @@ class DS5EdgeController extends DS5Controller {
     return Array.from({ length: 12 }, (_, i) => data.getUint16(4 + i * 2, true));
   }
 
-  async writeFinetuneData(data) {
-    const pkg = data.reduce((acc, val) => acc.concat([val & 0xff, val >> 8]), [12, 1]);
+  async writeFinetuneData(data: number[]): Promise<void> {
+    const pkg = data.reduce<number[]>((acc, val) => acc.concat([val & 0xff, val >> 8]), [12, 1]);
     await this.sendFeatureReport(0x80, pkg)
   }
 
-  getNumberOfSticks() {
+  getNumberOfSticks(): number {
     return 2;
   }
 

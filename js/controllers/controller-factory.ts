@@ -4,13 +4,25 @@ import DS4Controller from './ds4-controller.js';
 import DS5Controller from './ds5-controller.js';
 import DS5EdgeController from './ds5-edge-controller.js';
 import VR2Controller from './vr2-controller.js';
+import type BaseController from './base-controller.js';
 import { dec2hex } from '../utils.js';
+
+/** Which parts of the UI to show for a controller model */
+export interface UIConfig {
+  showInfo: boolean;
+  showFinetune: boolean;
+  showInfoTab: boolean;
+  showQuickTests: boolean;
+  showFourStepCalib: boolean;
+  showQuickCalib: boolean;
+  showCalibrationHistory?: boolean;
+}
 
 /**
 * Controller Factory - Creates the appropriate controller instance based on device type
 */
 class ControllerFactory {
-  static getSupportedModels() {
+  static getSupportedModels(): HIDDeviceFilter[] {
     const ds4v1 = { vendorId: 0x054c, productId: 0x05c4 };
     const ds4v2 = { vendorId: 0x054c, productId: 0x09cc };
     const ds5 = { vendorId: 0x054c, productId: 0x0ce6 };
@@ -23,10 +35,10 @@ class ControllerFactory {
 
   /**
   * Create a controller instance based on the HID device product ID
-  * @param {HIDDevice} device The HID device
-  * @returns {BaseController} The appropriate controller instance
+  * @param device The HID device
+  * @returns The appropriate controller instance
   */
-  static createControllerInstance(device) {
+  static createControllerInstance(device: HIDDevice): BaseController {
     switch (device.productId) {
       case 0x05c4: // DS4 v1
       case 0x09cc: // DS4 v2
@@ -51,10 +63,10 @@ class ControllerFactory {
 
   /**
   * Get device name based on product ID
-  * @param {number} productId Product ID
-  * @returns {string} Device name
+  * @param productId Product ID
+  * @returns Device name
   */
-  static getDeviceName(productId) {
+  static getDeviceName(productId: number): string {
     switch (productId) {
       case 0x05c4:
         return "Sony DualShock 4 V1";
@@ -75,10 +87,10 @@ class ControllerFactory {
 
   /**
   * Get UI configuration based on product ID
-  * @param {number} productId Product ID
-  * @returns {Object} UI configuration
+  * @param productId Product ID
+  * @returns UI configuration
   */
-  static getUIConfig(productId) {
+  static getUIConfig(productId: number): UIConfig {
     switch (productId) {
       case 0x05c4: // DS4 v1
       case 0x09cc: // DS4 v2

@@ -1,6 +1,16 @@
 'use strict';
 
-import BaseController from './base-controller.js';
+import BaseController, {
+  type ActionResult,
+  type AudioOutput,
+  type BatteryStatus,
+  type ControllerInfo,
+  type InfoItem,
+  type InputConfig,
+  type NvStatus,
+  type OpResult,
+  type ProgressCallback,
+} from './base-controller.js';
 import {
   sleep,
   buf2hex,
@@ -12,7 +22,7 @@ import {
 import { l } from '../translations.js';
 
 // DS4 Button mapping configuration
-const DS4_BUTTON_MAP = [
+const DS4_BUTTON_MAP: InputConfig['buttonMap'] = [
   { name: 'up', byte: 4, mask: 0x0 }, // Dpad handled separately
   { name: 'right', byte: 4, mask: 0x1 },
   { name: 'down', byte: 4, mask: 0x2 },
@@ -35,7 +45,7 @@ const DS4_BUTTON_MAP = [
 ];
 
 // DS4 Input processing configuration
-const DS4_INPUT_CONFIG = {
+const DS4_INPUT_CONFIG: InputConfig = {
   buttonMap: DS4_BUTTON_MAP,
   dpadByte: 4,
   l2AnalogByte: 7,
@@ -56,9 +66,33 @@ const DS4_VALID_FLAG0 = {
   LED_BLINK: 0x04,        // Bit 2 for LED blink control
 };
 
+interface DS4OutputState {
+  validFlag0: number;
+  validFlag1: number;
+  rumbleRight: number;
+  rumbleLeft: number;
+  ledRed: number;
+  ledGreen: number;
+  ledBlue: number;
+  ledFlashOn: number;
+  ledFlashOff: number;
+}
+
 // Basic DS4 Output Structure for vibration and LED control
-class DS4OutputStruct {
-  constructor(currentState = null) {
+class DS4OutputStruct implements DS4OutputState {
+  buffer: ArrayBuffer;
+  view: DataView;
+  validFlag0: number;
+  validFlag1: number;
+  rumbleRight: number;
+  rumbleLeft: number;
+  ledRed: number;
+  ledGreen: number;
+  ledBlue: number;
+  ledFlashOn: number;
+  ledFlashOff: number;
+
+  constructor(currentState: Partial<DS4OutputState> | null = null) {
     // Create a 32-byte buffer for DS4 output report (USB)
     this.buffer = new ArrayBuffer(31);
     this.view = new DataView(this.buffer);
@@ -82,7 +116,7 @@ class DS4OutputStruct {
   }
 
   // Pack the data into the output buffer
-  pack() {
+  pack(): ArrayBuffer {
     // Based on DS4 output report structure
     // Byte 0-2: Valid flags and padding
     this.view.setUint8(0, this.validFlag0);
@@ -110,7 +144,9 @@ class DS4OutputStruct {
 * DualShock 4 Controller implementation
 */
 class DS4Controller extends BaseController {
-  constructor(device) {
+  currentOutputState: DS4OutputState;
+
+  constructor(device: HIDDevice) {
     super(device);
     this.model = "DS4";
 
@@ -128,15 +164,15 @@ class DS4Controller extends BaseController {
     };
   }
 
-  getInputConfig() {
+  getInputConfig(): InputConfig {
     return DS4_INPUT_CONFIG;
   }
 
-  async getSerialNumber() {
+  async getSerialNumber(): Promise<string> {
     return await this.getBdAddr();
   }
 
-  async getInfo() {
+  async getInfo(): Promise<ControllerInfo> {
     // Device-only: collect info and return a common structure; do not touch the DOM
     try {
       let deviceTypeText = l("unknown");
@@ -144,7 +180,7 @@ class DS4Controller extends BaseController {
 
       const view = await this.receiveFeatureReport(0xa3);
 
-      const cmd = view.getUint8(0, true);
+      const cmd = view.getUint8(0);
 
       if(cmd != 0xa3 || view.buffer.byteLength < 49) {
         if(view.buffer.byteLength != 49) {
@@ -176,7 +212,7 @@ class DS4Controller extends BaseController {
 
       const hw_version = `${dec2hex(hw_ver_major)}:${dec2hex(hw_ver_minor)}`;
       const sw_version = `${dec2hex(sw_ver_major)}:${dec2hex(sw_ver_minor)}`;
-      const infoItems = [
+      const infoItems: InfoItem[] = [
         { key: l("Build Date"), value: `${k1} ${k2}`, cat: "fw" },
         { key: l("HW Version"), value: hw_version, cat: "hw" },
         { key: l("SW Version"), value: sw_version, cat: "fw" },
@@ -187,8 +223,8 @@ class DS4Controller extends BaseController {
 
       // Clones don't implement these reports, so reading them only stacks up
       // more timeouts - skip them once the device is known to be a clone.
-      let bd_addr = null;
-      let nv = null;
+      let bd_addr: string | null = null;
+      let nv: NvStatus | null = null;
       if(!is_clone) {
         bd_addr = await this.getBdAddr();
 
@@ -211,7 +247,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async flash(progressCallback = null) {
+  async flash(progressCallback: ProgressCallback | null = null): Promise<ActionResult> {
     la("ds4_flash");
     try {
       await this.nvsUnlock();
@@ -224,7 +260,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async reset() {
+  async reset(): Promise<void> {
     la("ds4_reset");
     try {
       await this.sendFeatureReport(0xa0, [4,1,0]);
@@ -232,7 +268,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async nvsLock() {
+  async nvsLock(): Promise<OpResult> {
     // la("ds4_nvlock");
     try {
       await this.sendFeatureReport(0xa0, [10,1,0]);
@@ -242,7 +278,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async nvsUnlock() {
+  async nvsUnlock(): Promise<OpResult> {
     // la("ds4_nvunlock");
     try {
       await this.sendFeatureReport(0xa0, [10,2,0x3e,0x71,0x7f,0x89]);
@@ -252,12 +288,12 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async getBdAddr() {
+  async getBdAddr(): Promise<string> {
     const view = await this.receiveFeatureReport(0x12);
     return format_mac_from_view(view, 1);
   }
 
-  async calibrateRangeBegin() {
+  async calibrateRangeBegin(): Promise<OpResult> {
     la("ds4_calibrate_range_begin");
     try {
       // Begin
@@ -283,7 +319,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async calibrateRangeEnd() {
+  async calibrateRangeEnd(): Promise<OpResult> {
     la("ds4_calibrate_range_end");
     try {
       // Write
@@ -305,7 +341,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async calibrateSticksBegin() {
+  async calibrateSticksBegin(): Promise<OpResult> {
     la("ds4_calibrate_sticks_begin");
     try {
       // Begin
@@ -332,7 +368,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async calibrateSticksSample() {
+  async calibrateSticksSample(): Promise<OpResult> {
     la("ds4_calibrate_sticks_sample");
     try {
       // Sample
@@ -353,7 +389,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async calibrateSticksEnd() {
+  async calibrateSticksEnd(): Promise<OpResult> {
     la("ds4_calibrate_sticks_end");
     try {
       // Write
@@ -375,12 +411,12 @@ class DS4Controller extends BaseController {
     }
   }
 
-  async queryNvStatus() {
+  async queryNvStatus(): Promise<NvStatus> {
     try {
       await this.sendFeatureReport(0x08, [0xff,0, 12]);
       const data = await this.receiveFeatureReport(0x11);
-      const ret = data.getUint8(1, false);
-      const res = { device: 'ds4', code: ret }
+      const ret = data.getUint8(1);
+      const res = { device: 'ds4', code: ret } as const
       switch(ret) {
         case 1:
           return { ...res, status: 'locked', locked: true, mode: 'temporary' };
@@ -394,7 +430,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  hwToBoardModel(hw_ver) {
+  hwToBoardModel(hw_ver: number): string {
     const a = hw_ver >> 8;
     if(a == 0x31) {
       return "JDM-001";
@@ -419,7 +455,7 @@ class DS4Controller extends BaseController {
     }
   }
 
-  isRare(hw_ver) {
+  isRare(hw_ver: number): boolean {
     const a = hw_ver >> 8;
     const b = a >> 4;
     return ((b == 7 && a > 0x74) || (b == 9 && a != 0x93 && a != 0x90));
@@ -428,7 +464,7 @@ class DS4Controller extends BaseController {
   /**
   * Parse DS4 battery status from input data
   */
-  parseBatteryStatus(data) {
+  parseBatteryStatus(data: DataView): BatteryStatus {
     const bat = data.getUint8(29); // DS4 battery byte is at position 29
 
     // DS4: bat_data = low 4 bits, bat_status = bit 4
@@ -463,9 +499,9 @@ class DS4Controller extends BaseController {
 
   /**
    * Send output report to the DS4 controller
-   * @param {ArrayBuffer} data - The output report data
+   * @param data - The output report data
    */
-  async sendOutputReport(data, reason = "") {
+  async sendOutputReport(data: ArrayBuffer, reason = ""): Promise<void> {
     if (!this.device?.opened) {
       throw new Error('Device is not opened');
     }
@@ -473,23 +509,23 @@ class DS4Controller extends BaseController {
       console.log(`Sending output report${ reason ? ` to ${reason}` : '' }:`, DS4_OUTPUT_REPORT.USB_REPORT_ID, buf2hex(data));
       await this.device.sendReport(DS4_OUTPUT_REPORT.USB_REPORT_ID, new Uint8Array(data));
     } catch (error) {
-      throw new Error(`Failed to send output report: ${error.message}`);
+      throw new Error(`Failed to send output report: ${(error as Error).message}`);
     }
   }
 
   /**
    * Update the current output state with values from an OutputStruct
-   * @param {DS4OutputStruct} outputStruct - The output structure to copy state from
+   * @param outputStruct - The output structure to copy state from
    */
-  updateCurrentOutputState(outputStruct) {
+  updateCurrentOutputState(outputStruct: DS4OutputStruct): void {
     this.currentOutputState = { ...outputStruct };
   }
 
   /**
    * Get a copy of the current output state
-   * @returns {Object} A copy of the current output state
+   * @returns A copy of the current output state
    */
-  getCurrentOutputState() {
+  getCurrentOutputState(): DS4OutputState {
     return { ...this.currentOutputState };
   }
 
@@ -497,7 +533,7 @@ class DS4Controller extends BaseController {
    * Initialize the current output state when the controller is first connected.
    * This method sets up reasonable defaults for the DS4 controller.
    */
-  async initializeCurrentOutputState() {
+  async initializeCurrentOutputState(): Promise<void> {
     try {
       // Reset all output state to known defaults
       this.currentOutputState = {
@@ -524,10 +560,10 @@ class DS4Controller extends BaseController {
 
   /**
    * Set vibration motors for haptic feedback
-   * @param {number} heavyLeft - Left motor intensity (0-255)
-   * @param {number} lightRight - Right motor intensity (0-255)
+   * @param heavyLeft - Left motor intensity (0-255)
+   * @param lightRight - Right motor intensity (0-255)
    */
-  async setVibration(heavyLeft = 0, lightRight = 0) {
+  async setVibration(heavyLeft = 0, lightRight = 0): Promise<ActionResult> {
     try {
       const { validFlag0 } = this.currentOutputState;
       const outputStruct = new DS4OutputStruct({
@@ -550,11 +586,11 @@ class DS4Controller extends BaseController {
 
   /**
    * Set lightbar color
-   * @param {number} red - Red component (0-255)
-   * @param {number} green - Green component (0-255)
-   * @param {number} blue - Blue component (0-255)
+   * @param red - Red component (0-255)
+   * @param green - Green component (0-255)
+   * @param blue - Blue component (0-255)
    */
-  async setLightbarColor(red = 0, green = 0, blue = 0) {
+  async setLightbarColor(red = 0, green = 0, blue = 0): Promise<void> {
     try {
       const { validFlag0 } = this.currentOutputState;
       const outputStruct = new DS4OutputStruct({
@@ -576,13 +612,13 @@ class DS4Controller extends BaseController {
 
   /**
    * Set lightbar blink pattern
-   * @param {number} red - Red component (0-255)
-   * @param {number} green - Green component (0-255)
-   * @param {number} blue - Blue component (0-255)
-   * @param {number} flashOn - On duration in deciseconds (0-255)
-   * @param {number} flashOff - Off duration in deciseconds (0-255)
+   * @param red - Red component (0-255)
+   * @param green - Green component (0-255)
+   * @param blue - Blue component (0-255)
+   * @param flashOn - On duration in deciseconds (0-255)
+   * @param flashOff - Off duration in deciseconds (0-255)
    */
-  async setLightbarBlink(red = 0, green = 0, blue = 0, flashOn = 0, flashOff = 0) {
+  async setLightbarBlink(red = 0, green = 0, blue = 0, flashOn = 0, flashOff = 0): Promise<void> {
     try {
       const { validFlag0 } = this.currentOutputState;
       const outputStruct = new DS4OutputStruct({
@@ -609,10 +645,10 @@ class DS4Controller extends BaseController {
    * Note: DS4 only supports playing sound through headphones connected to the controller.
    * The built-in speaker is not supported. DS4 audio is a standard USB audio device,
    * not controlled via HID output reports.
-   * @param {string} output - Audio output destination: "headphones" only (throws error if "speaker")
+   * @param output - Audio output destination: "headphones" only (throws error if "speaker")
    * @throws {Error} If output is set to "speaker" (not supported on DS4)
    */
-  async setSpeakerTone(output = "speaker") {
+  async setSpeakerTone(output: AudioOutput = "speaker"): Promise<void> {
     // Throw error if trying to use the built-in speaker
     if (output === "speaker") {
       throw new Error("DS4 does not support playing sound through the built-in speaker. Only 'headphones' output is supported.");
@@ -622,7 +658,7 @@ class DS4Controller extends BaseController {
     // It cannot be controlled through HID output reports like DS5
 
     // Create Web Audio Context
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const audioContext = new (window.AudioContext || window.webkitAudioContext!)();
     if (audioContext.state === 'suspended') {
       await audioContext.resume();
     }
@@ -663,10 +699,10 @@ class DS4Controller extends BaseController {
       // Connect audio graph
       oscillator.connect(gainNode);
 
-      let audioElement = null;
+      let audioElement: HTMLAudioElement | null = null;
 
       // If DS4 audio device is found and setSinkId is supported, route to it
-      if (ds4AudioDevice && typeof HTMLMediaElement !== 'undefined' && HTMLMediaElement.prototype.setSinkId) {
+      if (ds4AudioDevice && typeof HTMLMediaElement !== 'undefined' && (HTMLMediaElement.prototype as Partial<HTMLMediaElement>).setSinkId) {
         try {
           // Create a MediaStreamDestination to capture the audio
           const streamDestination = audioContext.createMediaStreamDestination();
@@ -707,16 +743,16 @@ class DS4Controller extends BaseController {
     }
   }
 
-  getNumberOfSticks() {
+  getNumberOfSticks(): number {
     return 2;
   }
 
   /**
    * Get the list of supported quick tests for DS4 controller
    * DS4 does not support adaptive triggers, speaker, or microphone
-   * @returns {Array<string>} Array of supported test types
+   * @returns Array of supported test types
    */
-  getSupportedQuickTests() {
+  getSupportedQuickTests(): string[] {
     return ['usb', 'buttons', 'imu', 'trackpad', 'haptic', 'lights', 'headphone'];
   }
 }
