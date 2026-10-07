@@ -1,5 +1,18 @@
 'use strict';
 
+export interface LastConnectedInfo {
+  deviceName: string;
+  timestamp: string;
+  serialNumber: string | null;
+  boardModel?: string;
+  color?: string;
+}
+
+export type Theme = 'light' | 'dark';
+
+/** Fine-tune history, keyed by controller. Its shape is owned by finetune-history.js. */
+export type FinetuneHistory = Record<string, unknown>;
+
 export const Storage = {
   STORAGE_KEYS: {
     LAST_CONNECTED_CONTROLLER: 'lastConnectedController',
@@ -15,12 +28,12 @@ export const Storage = {
     PREFERRED_THEME: 'preferredTheme',
   },
 
-  getChangesStorageKey(serialNumber) {
+  getChangesStorageKey(serialNumber: string | null | undefined): string | null {
     if (!serialNumber) return null;
     return `changes_${serialNumber}`;
   },
 
-  setString(key, value) {
+  setString(key: string, value: string): void {
     try {
       localStorage.setItem(key, value);
     } catch (e) {
@@ -28,7 +41,7 @@ export const Storage = {
     }
   },
 
-  getString(key) {
+  getString(key: string): string | null {
     try {
       return localStorage.getItem(key);
     } catch (e) {
@@ -37,7 +50,7 @@ export const Storage = {
     }
   },
 
-  setObject(key, value) {
+  setObject(key: string, value: unknown): void {
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (e) {
@@ -45,7 +58,7 @@ export const Storage = {
     }
   },
 
-  getObject(key) {
+  getObject<T>(key: string): T | null {
     try {
       const value = localStorage.getItem(key);
       return value ? JSON.parse(value) : null;
@@ -55,7 +68,7 @@ export const Storage = {
     }
   },
 
-  removeItem(key) {
+  removeItem(key: string): void {
     try {
       localStorage.removeItem(key);
     } catch (e) {
@@ -63,31 +76,31 @@ export const Storage = {
     }
   },
 
-  setBoolean(key, value) {
+  setBoolean(key: string, value: boolean): void {
     this.setString(key, value.toString());
   },
 
-  getBoolean(key, defaultValue = false) {
+  getBoolean(key: string, defaultValue = false): boolean {
     const value = this.getString(key);
     return value !== null ? value === 'true' : defaultValue;
   },
 
-  setNumber(key, value) {
+  setNumber(key: string, value: number): void {
     this.setString(key, value.toString());
   },
 
-  getNumber(key, defaultValue = 0) {
+  getNumber(key: string, defaultValue = 0): number {
     const value = this.getString(key);
     return value !== null ? parseInt(value, 10) : defaultValue;
   },
 
   lastConnectedController: {
-    set(info) {
+    set(info: LastConnectedInfo): void {
       Storage.setObject(Storage.STORAGE_KEYS.LAST_CONNECTED_CONTROLLER, info);
     },
 
     get() {
-      return Storage.getObject(Storage.STORAGE_KEYS.LAST_CONNECTED_CONTROLLER);
+      return Storage.getObject<LastConnectedInfo>(Storage.STORAGE_KEYS.LAST_CONNECTED_CONTROLLER);
     },
 
     clear() {
@@ -96,7 +109,7 @@ export const Storage = {
   },
 
   edgeModalDontShowAgain: {
-    set(value) {
+    set(value: boolean): void {
       Storage.setBoolean(Storage.STORAGE_KEYS.EDGE_MODAL_DONT_SHOW_AGAIN, value);
     },
 
@@ -110,7 +123,7 @@ export const Storage = {
   },
 
   failedCalibrationCount: {
-    set(count) {
+    set(count: number): void {
       Storage.setNumber(Storage.STORAGE_KEYS.FAILED_CALIBRATION_COUNT, count);
     },
 
@@ -124,7 +137,7 @@ export const Storage = {
   },
 
   centerCalibrationMethod: {
-    set(method) {
+    set(method: string): void {
       Storage.setString(Storage.STORAGE_KEYS.CENTER_CALIBRATION_METHOD, method);
     },
 
@@ -138,7 +151,7 @@ export const Storage = {
   },
 
   rangeCalibrationMethod: {
-    set(method) {
+    set(method: string): void {
       Storage.setString(Storage.STORAGE_KEYS.RANGE_CALIBRATION_METHOD, method);
     },
 
@@ -152,12 +165,12 @@ export const Storage = {
   },
 
   quickTestSkippedTests: {
-    set(tests) {
+    set(tests: string[]): void {
       Storage.setObject(Storage.STORAGE_KEYS.QUICK_TEST_SKIPPED_TESTS, tests);
     },
 
     get() {
-      return Storage.getObject(Storage.STORAGE_KEYS.QUICK_TEST_SKIPPED_TESTS) || [];
+      return Storage.getObject<string[]>(Storage.STORAGE_KEYS.QUICK_TEST_SKIPPED_TESTS) || [];
     },
 
     clear() {
@@ -166,7 +179,7 @@ export const Storage = {
   },
 
   showRawNumbersCheckbox: {
-    set(value) {
+    set(value: boolean): void {
       Storage.setString(Storage.STORAGE_KEYS.SHOW_RAW_NUMBERS_CHECKBOX, value.toString());
     },
 
@@ -181,7 +194,7 @@ export const Storage = {
   },
 
   finetuneCenterStepSize: {
-    set(value) {
+    set(value: number): void {
       Storage.setString(Storage.STORAGE_KEYS.FINETUNE_CENTER_STEP_SIZE, value.toString());
     },
 
@@ -195,7 +208,7 @@ export const Storage = {
   },
 
   finetuneCircularityStepSize: {
-    set(value) {
+    set(value: number): void {
       Storage.setString(Storage.STORAGE_KEYS.FINETUNE_CIRCULARITY_STEP_SIZE, value.toString());
     },
 
@@ -209,20 +222,20 @@ export const Storage = {
   },
 
   hasChangesState: {
-    set(serialNumber, hasChanges) {
+    set(serialNumber: string | null | undefined, hasChanges: boolean): void {
       const key = Storage.getChangesStorageKey(serialNumber);
       if (key) {
         Storage.setObject(key, hasChanges);
       }
     },
 
-    get(serialNumber) {
+    get(serialNumber: string | null | undefined): boolean {
       const key = Storage.getChangesStorageKey(serialNumber);
       if (!key) return false;
-      return Storage.getObject(key) || false;
+      return Storage.getObject<boolean>(key) || false;
     },
 
-    clear(serialNumber) {
+    clear(serialNumber: string | null | undefined): void {
       const key = Storage.getChangesStorageKey(serialNumber);
       if (key) {
         Storage.removeItem(key);
@@ -232,10 +245,10 @@ export const Storage = {
 
   finetuneHistory: {
     getAll() {
-      return Storage.getObject(Storage.STORAGE_KEYS.FINETUNE_HISTORY) || {};
+      return Storage.getObject<FinetuneHistory>(Storage.STORAGE_KEYS.FINETUNE_HISTORY) || {};
     },
 
-    setAll(history) {
+    setAll(history: FinetuneHistory): void {
       Storage.setObject(Storage.STORAGE_KEYS.FINETUNE_HISTORY, history);
     },
 
@@ -245,12 +258,12 @@ export const Storage = {
   },
 
   preferredTheme: {
-    set(theme) {
+    set(theme: Theme): void {
       Storage.setString(Storage.STORAGE_KEYS.PREFERRED_THEME, theme);
     },
 
     get() {
-      return Storage.getString(Storage.STORAGE_KEYS.PREFERRED_THEME);
+      return Storage.getString(Storage.STORAGE_KEYS.PREFERRED_THEME) as Theme | null;
     },
 
     clear() {
